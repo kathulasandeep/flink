@@ -74,8 +74,6 @@ public class ActiveResourceManagerTest extends TestLogger {
     private static final Time TIMEOUT_TIME = Time.seconds(TIMEOUT_SEC);
 
     private static final WorkerResourceSpec WORKER_RESOURCE_SPEC = WorkerResourceSpec.ZERO;
-    private static final TaskExecutorMemoryConfiguration TESTING_CONFIG =
-            new TaskExecutorMemoryConfiguration(1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L, 21L, 36L);
 
     /** Tests worker successfully requested, started and registered. */
     @Test
@@ -525,7 +523,7 @@ public class ActiveResourceManagerTest extends TestLogger {
                                     registerTaskExecutor(ResourceID.generate());
                             assertThat(
                                     registerTaskExecutorFuture.get(TIMEOUT_SEC, TimeUnit.SECONDS),
-                                    instanceOf(RegistrationResponse.Rejection.class));
+                                    instanceOf(RegistrationResponse.Decline.class));
                         });
             }
         };
@@ -645,7 +643,7 @@ public class ActiveResourceManagerTest extends TestLogger {
                             1234,
                             23456,
                             new HardwareDescription(1, 2L, 3L, 4L),
-                            TESTING_CONFIG,
+                            TaskExecutorMemoryConfiguration.create(flinkConfig),
                             ResourceProfile.ZERO,
                             ResourceProfile.ZERO);
 

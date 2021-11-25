@@ -26,6 +26,7 @@ import org.apache.flink.kubernetes.configuration.KubernetesResourceManagerDriver
 import org.apache.flink.kubernetes.kubeclient.FlinkKubeClient;
 import org.apache.flink.kubernetes.kubeclient.FlinkKubeClient.WatchCallbackHandler;
 import org.apache.flink.kubernetes.kubeclient.TestingFlinkKubeClient;
+import org.apache.flink.kubernetes.kubeclient.TestingKubeClientFactory;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesPod;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesTooOldResourceVersionException;
 import org.apache.flink.kubernetes.kubeclient.resources.TestingKubernetesPod;
@@ -319,7 +320,7 @@ public class KubernetesResourceManagerDriverTest
                                     return FutureUtils.completedVoidFuture();
                                 });
 
-        private TestingFlinkKubeClient flinkKubeClient;
+        private TestingKubeClientFactory kubeClientFactory;
 
         FlinkKubeClient.WatchCallbackHandler<KubernetesPod> getPodCallbackHandler() {
             try {
@@ -340,7 +341,7 @@ public class KubernetesResourceManagerDriverTest
             flinkConfig.setString(
                     TaskManagerOptions.RPC_PORT, String.valueOf(Constants.TASK_MANAGER_RPC_PORT));
 
-            flinkKubeClient = flinkKubeClientBuilder.build();
+            kubeClientFactory = new TestingKubeClientFactory(flinkKubeClientBuilder);
         }
 
         @Override
@@ -352,7 +353,7 @@ public class KubernetesResourceManagerDriverTest
         @Override
         protected ResourceManagerDriver<KubernetesWorkerNode> createResourceManagerDriver() {
             return new KubernetesResourceManagerDriver(
-                    flinkConfig, flinkKubeClient, KUBERNETES_RESOURCE_MANAGER_CONFIGURATION);
+                    flinkConfig, kubeClientFactory, KUBERNETES_RESOURCE_MANAGER_CONFIGURATION);
         }
 
         @Override

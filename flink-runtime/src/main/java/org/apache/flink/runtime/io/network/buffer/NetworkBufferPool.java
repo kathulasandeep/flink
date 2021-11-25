@@ -285,7 +285,7 @@ public class NetworkBufferPool
     }
 
     public long getTotalMemory() {
-        return (long) getTotalNumberOfMemorySegments() * memorySegmentSize;
+        return getTotalNumberOfMemorySegments() * memorySegmentSize;
     }
 
     public int getNumberOfAvailableMemorySegments() {
@@ -295,7 +295,7 @@ public class NetworkBufferPool
     }
 
     public long getAvailableMemory() {
-        return (long) getNumberOfAvailableMemorySegments() * memorySegmentSize;
+        return getNumberOfAvailableMemorySegments() * memorySegmentSize;
     }
 
     public int getNumberOfUsedMemorySegments() {
@@ -303,7 +303,7 @@ public class NetworkBufferPool
     }
 
     public long getUsedMemory() {
-        return (long) getNumberOfUsedMemorySegments() * memorySegmentSize;
+        return getNumberOfUsedMemorySegments() * memorySegmentSize;
     }
 
     public int getNumberOfRegisteredBufferPools() {

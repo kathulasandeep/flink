@@ -31,8 +31,6 @@ __all__ = [
     'OverWindow'
 ]
 
-from pyflink.table.utils import to_expression_jarray
-
 
 class GroupWindow(object):
     """
@@ -357,7 +355,7 @@ class Over(object):
             _get_java_expression(order_by)))
 
     @classmethod
-    def partition_by(cls, *partition_by: Union[str, Expression]) -> 'OverWindowPartitioned':
+    def partition_by(cls, partition_by: Union[str, Expression]) -> 'OverWindowPartitioned':
         """
         Partitions the elements on some partition keys.
 
@@ -367,13 +365,8 @@ class Over(object):
         :param partition_by: List of field references.
         :return: An over window with defined partitioning.
         """
-        if all(isinstance(f, Expression) for f in partition_by):
-            return OverWindowPartitioned(get_gateway().jvm.Over.partitionBy(
-                to_expression_jarray(partition_by)))
-        else:
-            assert len(partition_by) == 1
-            assert isinstance(partition_by[0], str)
-            return OverWindowPartitioned(get_gateway().jvm.Over.partitionBy(partition_by[0]))
+        return OverWindowPartitioned(get_gateway().jvm.Over.partitionBy(
+            _get_java_expression(partition_by)))
 
 
 class OverWindowPartitionedOrdered(object):

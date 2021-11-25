@@ -19,7 +19,6 @@
 package org.apache.flink.kubernetes.kubeclient.resources;
 
 import org.apache.flink.kubernetes.kubeclient.FlinkKubeClient;
-import org.apache.flink.kubernetes.utils.KubernetesUtils;
 
 import io.fabric8.kubernetes.api.model.Pod;
 
@@ -37,11 +36,10 @@ public class KubernetesPodsWatcher extends AbstractKubernetesWatcher<Pod, Kubern
     @Override
     public void eventReceived(Action action, Pod pod) {
         logger.debug(
-                "Received {} event for pod {}, details: {}{}",
+                "Received {} event for pod {}, details: {}",
                 action,
                 pod.getMetadata().getName(),
-                System.lineSeparator(),
-                KubernetesUtils.tryToGetPrettyPrintYaml(pod.getStatus()));
+                pod.getStatus());
         final List<KubernetesPod> pods = Collections.singletonList(new KubernetesPod(pod));
         switch (action) {
             case ADDED:

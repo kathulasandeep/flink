@@ -19,7 +19,6 @@
 package org.apache.flink.kubernetes.kubeclient.resources;
 
 import org.apache.flink.kubernetes.kubeclient.FlinkKubeClient;
-import org.apache.flink.kubernetes.utils.KubernetesUtils;
 
 import io.fabric8.kubernetes.api.model.ConfigMap;
 
@@ -38,11 +37,10 @@ public class KubernetesConfigMapWatcher
     @Override
     public void eventReceived(Action action, ConfigMap configMap) {
         logger.debug(
-                "Received {} event for configMap {}, details: {}{}",
+                "Received {} event for configMap {}, details: {}",
                 action,
                 configMap.getMetadata().getName(),
-                System.lineSeparator(),
-                KubernetesUtils.tryToGetPrettyPrintYaml(configMap));
+                configMap.getData());
         final List<KubernetesConfigMap> configMaps =
                 Collections.singletonList(new KubernetesConfigMap(configMap));
         switch (action) {

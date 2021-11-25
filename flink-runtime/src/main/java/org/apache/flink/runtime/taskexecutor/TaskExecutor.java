@@ -65,7 +65,6 @@ import org.apache.flink.runtime.jobgraph.tasks.InputSplitProvider;
 import org.apache.flink.runtime.jobgraph.tasks.TaskOperatorEventGateway;
 import org.apache.flink.runtime.jobmaster.AllocatedSlotInfo;
 import org.apache.flink.runtime.jobmaster.AllocatedSlotReport;
-import org.apache.flink.runtime.jobmaster.JMTMRegistrationRejection;
 import org.apache.flink.runtime.jobmaster.JMTMRegistrationSuccess;
 import org.apache.flink.runtime.jobmaster.JobMasterGateway;
 import org.apache.flink.runtime.jobmaster.JobMasterId;
@@ -1479,21 +1478,22 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
                 if (isJobManagerConnectionValid(jobId, jobMasterId)) {
                     // mark accepted slots active
                     for (SlotOffer acceptedSlot : acceptedSlots) {
-                        final AllocationID allocationId = acceptedSlot.getAllocationId();
                         try {
-                            if (!taskSlotTable.markSlotActive(allocationId)) {
+                            if (!taskSlotTable.markSlotActive(acceptedSlot.getAllocationId())) {
                                 // the slot is either free or releasing at the moment
-                                final String message =
-                                        "Could not mark slot " + allocationId + " active.";
+                                final String message = "Could not mark slot " + jobId + " active.";
                                 log.debug(message);
                                 jobMasterGateway.failSlot(
-                                        getResourceID(), allocationId, new FlinkException(message));
+                                        getResourceID(),
+                                        acceptedSlot.getAllocationId(),
+                                        new FlinkException(message));
                             }
                         } catch (SlotNotFoundException e) {
-                            final String message =
-                                    "Could not mark slot " + allocationId + " active.";
+                            final String message = "Could not mark slot " + jobId + " active.";
                             jobMasterGateway.failSlot(
-                                    getResourceID(), allocationId, new FlinkException(message));
+                                    getResourceID(),
+                                    acceptedSlot.getAllocationId(),
+                                    new FlinkException(message));
                         }
 
                         offeredSlots.remove(acceptedSlot);
@@ -1612,7 +1612,7 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
                     freeSlotInternal(activeSlotAllocationID, freeingCause);
                 }
             } catch (SlotNotFoundException e) {
-                log.debug("Could not mark the slot {} inactive.", activeSlotAllocationID, e);
+                log.debug("Could not mark the slot {} inactive.", jobId, e);
             }
         }
 
@@ -1684,45 +1684,6 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
 
         JobMasterGateway jobManagerGateway = jobManagerConnection.getJobManagerGateway();
         jobManagerGateway.disconnectTaskManager(getResourceID(), cause);
-    }
-
-    private void handleRejectedJobManagerConnection(
-            JobID jobId, String targetAddress, JMTMRegistrationRejection rejection) {
-        log.info(
-                "The JobManager under {} rejected the registration for job {}: {}. Releasing all job related resources.",
-                targetAddress,
-                jobId,
-                rejection.getReason());
-
-        releaseJobResources(
-                jobId,
-                new FlinkException(
-                        String.format("JobManager %s has rejected the registration.", jobId)));
-    }
-
-    private void releaseJobResources(JobID jobId, Exception cause) {
-        log.debug("Releasing job resources for job {}.", jobId, cause);
-
-        if (partitionTracker.isTrackingPartitionsFor(jobId)) {
-            // stop tracking job partitions
-            partitionTracker.stopTrackingAndReleaseJobPartitionsFor(jobId);
-        }
-
-        // free slots
-        final Set<AllocationID> allocationIds = taskSlotTable.getAllocationIdsPerJob(jobId);
-
-        if (!allocationIds.isEmpty()) {
-            for (AllocationID allocationId : allocationIds) {
-                freeSlotInternal(allocationId, cause);
-            }
-        }
-
-        jobLeaderService.removeJob(jobId);
-        jobTable.getJob(jobId)
-                .ifPresent(
-                        job -> {
-                            closeJob(job, cause);
-                        });
     }
 
     private void scheduleResultPartitionCleanup(JobID jobId) {
@@ -1865,16 +1826,19 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
         if (taskSlotTable.getAllocationIdsPerJob(jobId).isEmpty()
                 && !partitionTracker.isTrackingPartitionsFor(jobId)) {
             // we can remove the job from the job leader service
+            jobLeaderService.removeJob(jobId);
 
-            final FlinkException cause =
-                    new FlinkException(
-                            "TaskExecutor "
-                                    + getAddress()
-                                    + " has no more allocated slots for job "
-                                    + jobId
-                                    + '.');
-
-            releaseJobResources(jobId, cause);
+            jobTable.getJob(jobId)
+                    .ifPresent(
+                            job ->
+                                    closeJob(
+                                            job,
+                                            new FlinkException(
+                                                    "TaskExecutor "
+                                                            + getAddress()
+                                                            + " has no more allocated slots for job "
+                                                            + jobId
+                                                            + '.')));
         }
     }
 
@@ -2129,19 +2093,11 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
         public void handleError(Throwable throwable) {
             onFatalError(throwable);
         }
-
-        @Override
-        public void jobManagerRejectedRegistration(
-                JobID jobId, String targetAddress, JMTMRegistrationRejection rejection) {
-            runAsync(() -> handleRejectedJobManagerConnection(jobId, targetAddress, rejection));
-        }
     }
 
     private final class ResourceManagerRegistrationListener
             implements RegistrationConnectionListener<
-                    TaskExecutorToResourceManagerConnection,
-                    TaskExecutorRegistrationSuccess,
-                    TaskExecutorRegistrationRejection> {
+                    TaskExecutorToResourceManagerConnection, TaskExecutorRegistrationSuccess> {
 
         @Override
         public void onRegistrationSuccess(
@@ -2175,16 +2131,6 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
         @Override
         public void onRegistrationFailure(Throwable failure) {
             onFatalError(failure);
-        }
-
-        @Override
-        public void onRegistrationRejection(
-                String targetAddress, TaskExecutorRegistrationRejection rejection) {
-            onFatalError(
-                    new FlinkException(
-                            String.format(
-                                    "The TaskExecutor's registration at the ResourceManager %s has been rejected: %s",
-                                    targetAddress, rejection)));
         }
     }
 

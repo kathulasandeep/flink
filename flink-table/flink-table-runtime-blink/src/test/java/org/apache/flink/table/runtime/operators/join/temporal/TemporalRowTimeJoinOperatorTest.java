@@ -18,13 +18,10 @@
 
 package org.apache.flink.table.runtime.operators.join.temporal;
 
-import org.apache.flink.api.common.state.ValueStateDescriptor;
-import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.util.KeyedTwoInputStreamOperatorTestHarness;
 import org.apache.flink.table.data.RowData;
 
-import org.junit.Assert;
 import org.junit.Test;
 
 import java.util.ArrayList;
@@ -169,23 +166,6 @@ public class TemporalRowTimeJoinOperatorTest extends TemporalTimeJoinOperatorTes
         expectedOutput.add(new Watermark(15));
 
         assertor.assertOutputEquals("output wrong.", expectedOutput, testHarness.getOutput());
-        Assert.assertNull(
-                joinOperator
-                        .getKeyedStateStore()
-                        .getState(
-                                new ValueStateDescriptor<>(
-                                        TemporalRowTimeJoinOperator.getNextLeftIndexStateName(),
-                                        Types.LONG))
-                        .value());
-        Assert.assertNull(
-                joinOperator
-                        .getKeyedStateStore()
-                        .getState(
-                                new ValueStateDescriptor<>(
-                                        TemporalRowTimeJoinOperator.getRegisteredTimerStateName(),
-                                        Types.LONG))
-                        .value());
-
         testHarness.close();
     }
 

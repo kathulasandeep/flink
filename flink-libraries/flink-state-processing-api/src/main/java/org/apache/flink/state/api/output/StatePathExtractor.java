@@ -34,18 +34,18 @@ import javax.annotation.Nullable;
 
 /** Extracts all file paths that are part of the provided {@link OperatorState}. */
 @Internal
-public class StatePathExtractor implements FlatMapFunction<OperatorState, Path> {
+public class StatePathExtractor implements FlatMapFunction<OperatorState, String> {
 
     private static final long serialVersionUID = 1L;
 
     @Override
-    public void flatMap(OperatorState operatorState, Collector<Path> out) throws Exception {
+    public void flatMap(OperatorState operatorState, Collector<String> out) throws Exception {
         for (OperatorSubtaskState subTaskState : operatorState.getSubtaskStates().values()) {
             // managed operator state
             for (OperatorStateHandle operatorStateHandle : subTaskState.getManagedOperatorState()) {
                 Path path = getStateFilePathFromStreamStateHandle(operatorStateHandle);
                 if (path != null) {
-                    out.collect(path);
+                    out.collect(path.getPath());
                 }
             }
             // managed keyed state
@@ -55,7 +55,7 @@ public class StatePathExtractor implements FlatMapFunction<OperatorState, Path> 
                             getStateFilePathFromStreamStateHandle(
                                     (KeyGroupsStateHandle) keyedStateHandle);
                     if (path != null) {
-                        out.collect(path);
+                        out.collect(path.getPath());
                     }
                 }
             }
@@ -63,7 +63,7 @@ public class StatePathExtractor implements FlatMapFunction<OperatorState, Path> 
             for (OperatorStateHandle operatorStateHandle : subTaskState.getRawOperatorState()) {
                 Path path = getStateFilePathFromStreamStateHandle(operatorStateHandle);
                 if (path != null) {
-                    out.collect(path);
+                    out.collect(path.getPath());
                 }
             }
             // raw keyed state
@@ -73,7 +73,7 @@ public class StatePathExtractor implements FlatMapFunction<OperatorState, Path> 
                             getStateFilePathFromStreamStateHandle(
                                     (KeyGroupsStateHandle) keyedStateHandle);
                     if (path != null) {
-                        out.collect(path);
+                        out.collect(path.getPath());
                     }
                 }
             }

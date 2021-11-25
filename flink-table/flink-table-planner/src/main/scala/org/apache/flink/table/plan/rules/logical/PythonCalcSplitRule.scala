@@ -22,7 +22,7 @@ import java.util.function.Function
 
 import org.apache.calcite.plan.RelOptRule.{any, operand}
 import org.apache.calcite.plan.{RelOptRule, RelOptRuleCall}
-import org.apache.calcite.rex.{RexBuilder, RexCall, RexCorrelVariable, RexFieldAccess, RexInputRef, RexNode, RexProgram}
+import org.apache.calcite.rex.{RexBuilder, RexCall, RexFieldAccess, RexInputRef, RexNode, RexProgram}
 import org.apache.calcite.sql.validate.SqlValidatorUtil
 import org.apache.flink.table.functions.ScalarFunction
 import org.apache.flink.table.functions.python.PythonFunctionKind
@@ -53,7 +53,6 @@ abstract class PythonCalcSplitRuleBase(description: String)
 
     val extractedFunctionOffset = input.getRowType.getFieldCount
     val splitter = new ScalarFunctionSplitter(
-      rexBuilder,
       extractedFunctionOffset,
       extractedRexNodes,
       new Function[RexNode, Boolean] {
@@ -305,7 +304,6 @@ object PythonCalcRewriteProjectionRule extends PythonCalcSplitRuleBase(
 }
 
 private class ScalarFunctionSplitter(
-    rexBuilder: RexBuilder,
     extractedFunctionOffset: Int,
     extractedRexNodes: mutable.ArrayBuffer[RexNode],
     needConvert: Function[RexNode, Boolean])
@@ -321,16 +319,7 @@ private class ScalarFunctionSplitter(
 
   override def visitFieldAccess(fieldAccess: RexFieldAccess): RexNode = {
     if (needConvert(fieldAccess)) {
-      val expr = fieldAccess.getReferenceExpr
-      expr match {
-        case _: RexCorrelVariable =>
-          val field = fieldAccess.getField
-          new RexInputRef(field.getIndex, field.getType)
-        case _ =>
-          val newFieldAccess = rexBuilder.makeFieldAccess(
-            expr.accept(this), fieldAccess.getField.getIndex)
-          getExtractedRexNode(newFieldAccess)
-      }
+      getExtractedRexNode(fieldAccess)
     } else {
       fieldAccess
     }

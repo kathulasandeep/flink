@@ -28,20 +28,12 @@ public class CheckpointMetaData implements Serializable {
     /** The ID of the checkpoint. */
     private final long checkpointId;
 
-    /** The timestamp of the checkpoint triggering. */
+    /** The timestamp of the checkpoint. */
     private final long timestamp;
 
-    /** The timestamp of the checkpoint receiving by this subtask. */
-    private final long receiveTimestamp;
-
     public CheckpointMetaData(long checkpointId, long timestamp) {
-        this(checkpointId, timestamp, System.currentTimeMillis());
-    }
-
-    public CheckpointMetaData(long checkpointId, long timestamp, long receiveTimestamp) {
         this.checkpointId = checkpointId;
         this.timestamp = timestamp;
-        this.receiveTimestamp = receiveTimestamp;
     }
 
     public long getCheckpointId() {
@@ -50,10 +42,6 @@ public class CheckpointMetaData implements Serializable {
 
     public long getTimestamp() {
         return timestamp;
-    }
-
-    public long getReceiveTimestamp() {
-        return receiveTimestamp;
     }
 
     @Override
@@ -67,16 +55,13 @@ public class CheckpointMetaData implements Serializable {
 
         CheckpointMetaData that = (CheckpointMetaData) o;
 
-        return (checkpointId == that.checkpointId)
-                && (timestamp == that.timestamp)
-                && (receiveTimestamp == that.receiveTimestamp);
+        return (checkpointId == that.checkpointId) && (timestamp == that.timestamp);
     }
 
     @Override
     public int hashCode() {
         int result = (int) (checkpointId ^ (checkpointId >>> 32));
         result = 31 * result + (int) (timestamp ^ (timestamp >>> 32));
-        result = 31 * result + (int) (receiveTimestamp ^ (receiveTimestamp >>> 32));
         return result;
     }
 
@@ -85,8 +70,6 @@ public class CheckpointMetaData implements Serializable {
         return "CheckpointMetaData{"
                 + "checkpointId="
                 + checkpointId
-                + ", receiveTimestamp="
-                + receiveTimestamp
                 + ", timestamp="
                 + timestamp
                 + '}';

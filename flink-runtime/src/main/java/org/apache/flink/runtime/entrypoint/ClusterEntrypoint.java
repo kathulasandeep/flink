@@ -154,7 +154,7 @@ public abstract class ClusterEntrypoint implements AutoCloseableAsync, FatalErro
 
         shutDownHook =
                 ShutdownHookUtil.addShutdownHook(
-                        () -> this.closeAsync().join(), getClass().getSimpleName(), LOG);
+                        this::cleanupDirectories, getClass().getSimpleName(), LOG);
     }
 
     public CompletableFuture<ApplicationStatus> getTerminationFuture() {
@@ -187,7 +187,6 @@ public abstract class ClusterEntrypoint implements AutoCloseableAsync, FatalErro
                 // clean up any partial state
                 shutDownAsync(
                                 ApplicationStatus.FAILED,
-                                ShutdownBehaviour.STOP_APPLICATION,
                                 ExceptionUtils.stringifyException(strippedThrowable),
                                 false)
                         .get(
@@ -252,18 +251,13 @@ public abstract class ClusterEntrypoint implements AutoCloseableAsync, FatalErro
                                 if (throwable != null) {
                                     shutDownAsync(
                                             ApplicationStatus.UNKNOWN,
-                                            ShutdownBehaviour.STOP_APPLICATION,
                                             ExceptionUtils.stringifyException(throwable),
                                             false);
                                 } else {
                                     // This is the general shutdown path. If a separate more
                                     // specific shutdown was
                                     // already triggered, this will do nothing
-                                    shutDownAsync(
-                                            applicationStatus,
-                                            ShutdownBehaviour.STOP_APPLICATION,
-                                            null,
-                                            true);
+                                    shutDownAsync(applicationStatus, null, true);
                                 }
                             });
         }
@@ -354,13 +348,10 @@ public abstract class ClusterEntrypoint implements AutoCloseableAsync, FatalErro
 
     @Override
     public CompletableFuture<Void> closeAsync() {
-        ShutdownHookUtil.removeShutdownHook(shutDownHook, getClass().getSimpleName(), LOG);
-
         return shutDownAsync(
                         ApplicationStatus.UNKNOWN,
-                        ShutdownBehaviour.STOP_PROCESS,
                         "Cluster entrypoint has been closed externally.",
-                        false)
+                        true)
                 .thenAccept(ignored -> {});
     }
 
@@ -459,7 +450,6 @@ public abstract class ClusterEntrypoint implements AutoCloseableAsync, FatalErro
 
     private CompletableFuture<ApplicationStatus> shutDownAsync(
             ApplicationStatus applicationStatus,
-            ShutdownBehaviour shutdownBehaviour,
             @Nullable String diagnostics,
             boolean cleanupHaData) {
         if (isShutDown.compareAndSet(false, true)) {
@@ -470,7 +460,7 @@ public abstract class ClusterEntrypoint implements AutoCloseableAsync, FatalErro
                     diagnostics);
 
             final CompletableFuture<Void> shutDownApplicationFuture =
-                    closeClusterComponent(applicationStatus, shutdownBehaviour, diagnostics);
+                    closeClusterComponent(applicationStatus, diagnostics);
 
             final CompletableFuture<Void> serviceShutdownFuture =
                     FutureUtils.composeAfterwards(
@@ -493,27 +483,19 @@ public abstract class ClusterEntrypoint implements AutoCloseableAsync, FatalErro
     }
 
     /**
-     * Close cluster components and deregister the Flink application from the resource management
-     * system by signalling the {@link ResourceManager}.
+     * Deregister the Flink application from the resource management system by signalling the {@link
+     * ResourceManager}.
      *
      * @param applicationStatus to terminate the application with
-     * @param shutdownBehaviour shutdown behaviour
      * @param diagnostics additional information about the shut down, can be {@code null}
      * @return Future which is completed once the shut down
      */
     private CompletableFuture<Void> closeClusterComponent(
-            ApplicationStatus applicationStatus,
-            ShutdownBehaviour shutdownBehaviour,
-            @Nullable String diagnostics) {
+            ApplicationStatus applicationStatus, @Nullable String diagnostics) {
         synchronized (lock) {
             if (clusterComponent != null) {
-                switch (shutdownBehaviour) {
-                    case STOP_APPLICATION:
-                        return clusterComponent.stopApplication(applicationStatus, diagnostics);
-                    case STOP_PROCESS:
-                    default:
-                        return clusterComponent.stopProcess();
-                }
+                return clusterComponent.deregisterApplicationAndClose(
+                        applicationStatus, diagnostics);
             } else {
                 return CompletableFuture.completedFuture(null);
             }
@@ -526,6 +508,8 @@ public abstract class ClusterEntrypoint implements AutoCloseableAsync, FatalErro
      * @throws IOException if the temporary directories could not be cleaned up
      */
     protected void cleanupDirectories() throws IOException {
+        ShutdownHookUtil.removeShutdownHook(shutDownHook, getClass().getSimpleName(), LOG);
+
         final String webTmpDir = configuration.getString(WebOptions.TMP_DIR);
 
         FileUtils.deleteDirectory(new File(webTmpDir));
@@ -615,10 +599,5 @@ public abstract class ClusterEntrypoint implements AutoCloseableAsync, FatalErro
 
         /** Directly stops after the job has finished. */
         DETACHED
-    }
-
-    private enum ShutdownBehaviour {
-        STOP_APPLICATION,
-        STOP_PROCESS,
     }
 }

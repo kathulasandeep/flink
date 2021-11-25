@@ -26,8 +26,6 @@ import org.apache.flink.table.types.logical.RowType;
 
 import org.apache.avro.generic.GenericRecord;
 
-import javax.annotation.Nullable;
-
 import java.io.IOException;
 import java.util.Objects;
 
@@ -95,10 +93,7 @@ public class AvroRowDataDeserializationSchema implements DeserializationSchema<R
     }
 
     @Override
-    public RowData deserialize(@Nullable byte[] message) throws IOException {
-        if (message == null) {
-            return null;
-        }
+    public RowData deserialize(byte[] message) throws IOException {
         try {
             GenericRecord deserialize = nestedSchema.deserialize(message);
             return (RowData) runtimeConverter.convert(deserialize);

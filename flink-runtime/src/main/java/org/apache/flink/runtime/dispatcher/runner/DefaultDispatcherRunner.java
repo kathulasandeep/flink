@@ -102,15 +102,7 @@ public final class DefaultDispatcherRunner implements DispatcherRunner, LeaderCo
 
     @Override
     public void grantLeadership(UUID leaderSessionID) {
-        runActionIfRunning(
-                () -> {
-                    LOG.info(
-                            "{} was granted leadership with leader id {}. Creating new {}.",
-                            getClass().getSimpleName(),
-                            leaderSessionID,
-                            DispatcherLeaderProcess.class.getSimpleName());
-                    startNewDispatcherLeaderProcess(leaderSessionID);
-                });
+        runActionIfRunning(() -> startNewDispatcherLeaderProcess(leaderSessionID));
     }
 
     private void startNewDispatcherLeaderProcess(UUID leaderSessionID) {
@@ -134,6 +126,11 @@ public final class DefaultDispatcherRunner implements DispatcherRunner, LeaderCo
     }
 
     private DispatcherLeaderProcess createNewDispatcherLeaderProcess(UUID leaderSessionID) {
+        LOG.debug(
+                "Create new {} with leader session id {}.",
+                DispatcherLeaderProcess.class.getSimpleName(),
+                leaderSessionID);
+
         final DispatcherLeaderProcess newDispatcherLeaderProcess =
                 dispatcherLeaderProcessFactory.create(leaderSessionID);
 
@@ -180,15 +177,7 @@ public final class DefaultDispatcherRunner implements DispatcherRunner, LeaderCo
 
     @Override
     public void revokeLeadership() {
-        runActionIfRunning(
-                () -> {
-                    LOG.info(
-                            "{} was revoked the leadership with leader id {}. Stopping the {}.",
-                            getClass().getSimpleName(),
-                            dispatcherLeaderProcess.getLeaderSessionId(),
-                            DispatcherLeaderProcess.class.getSimpleName());
-                    this.stopDispatcherLeaderProcess();
-                });
+        runActionIfRunning(this::stopDispatcherLeaderProcess);
     }
 
     private void runActionIfRunning(Runnable runnable) {

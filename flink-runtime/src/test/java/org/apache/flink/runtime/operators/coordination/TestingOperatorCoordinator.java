@@ -24,9 +24,7 @@ import org.apache.flink.runtime.util.SerializableFunction;
 import javax.annotation.Nullable;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -47,13 +45,11 @@ class TestingOperatorCoordinator implements OperatorCoordinator {
     @Nullable private byte[] lastRestoredCheckpointState;
     private long lastRestoredCheckpointId;
 
-    private final BlockingQueue<CompletableFuture<byte[]>> triggeredCheckpoints;
+    private BlockingQueue<CompletableFuture<byte[]>> triggeredCheckpoints;
 
-    private final BlockingQueue<Long> lastCheckpointComplete;
+    private BlockingQueue<Long> lastCheckpointComplete;
 
-    private final BlockingQueue<OperatorEvent> receivedOperatorEvents;
-
-    private final Map<Integer, SubtaskGateway> subtaskGateways;
+    private BlockingQueue<OperatorEvent> receivedOperatorEvents;
 
     private boolean started;
     private boolean closed;
@@ -69,7 +65,6 @@ class TestingOperatorCoordinator implements OperatorCoordinator {
         this.lastCheckpointComplete = new LinkedBlockingQueue<>();
         this.receivedOperatorEvents = new LinkedBlockingQueue<>();
         this.blockOnCloseLatch = blockOnCloseLatch;
-        this.subtaskGateways = new HashMap<>();
     }
 
     // ------------------------------------------------------------------------
@@ -95,17 +90,11 @@ class TestingOperatorCoordinator implements OperatorCoordinator {
     @Override
     public void subtaskFailed(int subtask, @Nullable Throwable reason) {
         failedTasks.add(subtask);
-        subtaskGateways.remove(subtask);
     }
 
     @Override
     public void subtaskReset(int subtask, long checkpointId) {
         restoredTasks.add(new SubtaskAndCheckpoint(subtask, checkpointId));
-    }
-
-    @Override
-    public void subtaskReady(int subtask, SubtaskGateway gateway) {
-        subtaskGateways.put(subtask, gateway);
     }
 
     @Override
@@ -129,10 +118,6 @@ class TestingOperatorCoordinator implements OperatorCoordinator {
 
     public OperatorCoordinator.Context getContext() {
         return context;
-    }
-
-    public SubtaskGateway getSubtaskGateway(int subtask) {
-        return subtaskGateways.get(subtask);
     }
 
     public boolean isStarted() {

@@ -41,14 +41,12 @@ import static org.junit.Assert.assertTrue;
 /** Unit tests for {@link OffsetsInitializer}. */
 public class OffsetsInitializerTest {
     private static final String TOPIC = "topic";
-    private static final String TOPIC2 = "topic2";
     private static KafkaSourceEnumerator.PartitionOffsetsRetrieverImpl retriever;
 
     @BeforeClass
     public static void setup() throws Throwable {
         KafkaSourceTestEnv.setup();
         KafkaSourceTestEnv.setupTopic(TOPIC, true, true);
-        KafkaSourceTestEnv.setupTopic(TOPIC2, false, false);
         retriever =
                 new KafkaSourceEnumerator.PartitionOffsetsRetrieverImpl(
                         KafkaSourceTestEnv.getConsumer(),
@@ -118,28 +116,19 @@ public class OffsetsInitializerTest {
         List<TopicPartition> partitions = KafkaSourceTestEnv.getPartitionsForTopic(TOPIC);
         Map<TopicPartition, OffsetAndMetadata> committedOffsets =
                 KafkaSourceTestEnv.getCommittedOffsets(partitions);
-        partitions.forEach(tp -> specifiedOffsets.put(tp, (long) tp.partition()));
+        committedOffsets.forEach((tp, oam) -> specifiedOffsets.put(tp, oam.offset()));
         // Remove the specified offsets for partition 0.
-        TopicPartition partitionSetToCommitted = new TopicPartition(TOPIC, 0);
-        specifiedOffsets.remove(partitionSetToCommitted);
+        TopicPartition missingPartition = new TopicPartition(TOPIC, 0);
+        specifiedOffsets.remove(missingPartition);
         OffsetsInitializer initializer = OffsetsInitializer.offsets(specifiedOffsets);
 
         assertEquals(OffsetResetStrategy.EARLIEST, initializer.getAutoOffsetResetStrategy());
-        // The partition without committed offset should fallback to offset reset strategy.
-        TopicPartition partitionSetToEarliest = new TopicPartition(TOPIC2, 0);
-        partitions.add(partitionSetToEarliest);
 
         Map<TopicPartition, Long> offsets = initializer.getPartitionOffsets(partitions, retriever);
         for (TopicPartition tp : partitions) {
             Long offset = offsets.get(tp);
-            long expectedOffset;
-            if (tp.equals(partitionSetToCommitted)) {
-                expectedOffset = committedOffsets.get(tp).offset();
-            } else if (tp.equals(partitionSetToEarliest)) {
-                expectedOffset = 0L;
-            } else {
-                expectedOffset = specifiedOffsets.get(tp);
-            }
+            long expectedOffset =
+                    tp.equals(missingPartition) ? 0L : committedOffsets.get(tp).offset();
             assertEquals(
                     String.format("%s has incorrect offset.", tp), expectedOffset, (long) offset);
         }

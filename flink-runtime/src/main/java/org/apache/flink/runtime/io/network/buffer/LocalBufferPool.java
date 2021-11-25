@@ -18,6 +18,7 @@
 
 package org.apache.flink.runtime.io.network.buffer;
 
+import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.core.memory.MemorySegment;
 import org.apache.flink.runtime.io.network.buffer.BufferListener.NotificationResult;
 import org.apache.flink.util.ExceptionUtils;
@@ -423,12 +424,6 @@ class LocalBufferPool implements BufferPool {
         mayNotifyAvailable(toNotify);
     }
 
-    private boolean shouldBeAvailable() {
-        assert Thread.holdsLock(availableMemorySegments);
-
-        return !availableMemorySegments.isEmpty() && unavailableSubpartitionsCount == 0;
-    }
-
     private boolean checkAvailability() {
         assert Thread.holdsLock(availableMemorySegments);
 
@@ -440,7 +435,6 @@ class LocalBufferPool implements BufferPool {
                 return unavailableSubpartitionsCount == 0;
             } else {
                 requestMemorySegmentFromGlobalWhenAvailable();
-                return shouldBeAvailable();
             }
         }
         return false;
@@ -449,7 +443,8 @@ class LocalBufferPool implements BufferPool {
     private void checkConsistentAvailability() {
         assert Thread.holdsLock(availableMemorySegments);
 
-        final boolean shouldBeAvailable = shouldBeAvailable();
+        final boolean shouldBeAvailable =
+                availableMemorySegments.size() > 0 && unavailableSubpartitionsCount == 0;
         checkState(
                 availabilityHelper.isApproximatelyAvailable() == shouldBeAvailable,
                 "Inconsistent availability: expected " + shouldBeAvailable);
@@ -656,6 +651,12 @@ class LocalBufferPool implements BufferPool {
 
     private boolean isRequestedSizeReached() {
         return numberOfRequestedMemorySegments >= currentPoolSize;
+    }
+
+    @VisibleForTesting
+    @Override
+    public BufferRecycler[] getSubpartitionBufferRecyclers() {
+        return subpartitionBufferRecyclers;
     }
 
     private static class SubpartitionBufferRecycler implements BufferRecycler {

@@ -20,7 +20,6 @@ package org.apache.flink.runtime.resourcemanager;
 
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.api.common.JobID;
-import org.apache.flink.api.common.JobStatus;
 import org.apache.flink.api.common.time.Time;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.runtime.blob.TransientBlobKey;
@@ -72,7 +71,6 @@ import org.apache.flink.runtime.taskexecutor.FileType;
 import org.apache.flink.runtime.taskexecutor.SlotReport;
 import org.apache.flink.runtime.taskexecutor.TaskExecutorGateway;
 import org.apache.flink.runtime.taskexecutor.TaskExecutorHeartbeatPayload;
-import org.apache.flink.runtime.taskexecutor.TaskExecutorRegistrationRejection;
 import org.apache.flink.runtime.taskexecutor.TaskExecutorRegistrationSuccess;
 import org.apache.flink.util.ExceptionUtils;
 import org.apache.flink.util.FlinkException;
@@ -392,8 +390,7 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
                                                         + "This indicates that a JobMaster leader change has happened.",
                                                 leadingJobMasterId, jobMasterId);
                                 log.debug(declineMessage);
-                                return new RegistrationResponse.Failure(
-                                        new FlinkException(declineMessage));
+                                return new RegistrationResponse.Decline(declineMessage);
                             }
                         },
                         getMainThreadExecutor());
@@ -415,7 +412,7 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
                                     jobManagerAddress);
                         }
 
-                        return new RegistrationResponse.Failure(throwable);
+                        return new RegistrationResponse.Decline(throwable.getMessage());
                     } else {
                         return registrationResponse;
                     }
@@ -441,7 +438,7 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
                     if (taskExecutorGatewayFuture == taskExecutorGatewayFutures.get(resourceId)) {
                         taskExecutorGatewayFutures.remove(resourceId);
                         if (throwable != null) {
-                            return new RegistrationResponse.Failure(throwable);
+                            return new RegistrationResponse.Decline(throwable.getMessage());
                         } else {
                             return registerTaskExecutorInternal(
                                     taskExecutorGateway, taskExecutorRegistration);
@@ -450,8 +447,8 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
                         log.debug(
                                 "Ignoring outdated TaskExecutorGateway connection for {}.",
                                 resourceId.getStringWithMetadata());
-                        return new RegistrationResponse.Failure(
-                                new FlinkException("Decline outdated task executor registration."));
+                        return new RegistrationResponse.Decline(
+                                "Decline outdated task executor registration.");
                     }
                 },
                 getMainThreadExecutor());
@@ -501,13 +498,8 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
     }
 
     @Override
-    public void disconnectJobManager(
-            final JobID jobId, JobStatus jobStatus, final Exception cause) {
-        if (jobStatus.isGloballyTerminalState()) {
-            removeJob(jobId, cause);
-        } else {
-            closeJobManagerConnection(jobId, cause);
-        }
+    public void disconnectJobManager(final JobID jobId, final Exception cause) {
+        closeJobManagerConnection(jobId, cause);
     }
 
     @Override
@@ -869,7 +861,7 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
                         jobManagerAddress);
             } else {
                 // tell old job manager that he is no longer the job leader
-                closeJobManagerConnection(
+                disconnectJobManager(
                         oldJobManagerRegistration.getJobID(),
                         new Exception("New job leader for job " + jobId + " found."));
 
@@ -945,8 +937,7 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
                             + "not recognize it",
                     taskExecutorResourceId.getStringWithMetadata(),
                     taskExecutorAddress);
-            return new TaskExecutorRegistrationRejection(
-                    "The ResourceManager does not recognize this TaskExecutor.");
+            return new RegistrationResponse.Decline("unrecognized TaskExecutor");
         } else {
             WorkerRegistration<WorkerType> registration =
                     new WorkerRegistration<>(
@@ -1070,7 +1061,7 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
         }
     }
 
-    protected void removeJob(JobID jobId, Exception cause) {
+    protected void removeJob(JobID jobId) {
         try {
             jobLeaderIdService.removeJob(jobId);
         } catch (Exception e) {
@@ -1081,7 +1072,7 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
         }
 
         if (jobManagerRegistrations.containsKey(jobId)) {
-            closeJobManagerConnection(jobId, cause);
+            disconnectJobManager(jobId, new Exception("Job " + jobId + "was removed"));
         }
     }
 
@@ -1090,7 +1081,7 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
             JobManagerRegistration jobManagerRegistration = jobManagerRegistrations.get(jobId);
 
             if (Objects.equals(jobManagerRegistration.getJobMasterId(), oldJobMasterId)) {
-                closeJobManagerConnection(jobId, new Exception("Job leader lost leadership."));
+                disconnectJobManager(jobId, new Exception("Job leader lost leadership."));
             } else {
                 log.debug(
                         "Discarding job leader lost leadership, because a new job leader was found for job {}. ",
@@ -1422,10 +1413,7 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
                         @Override
                         public void run() {
                             if (jobLeaderIdService.isValidTimeout(jobId, timeoutId)) {
-                                removeJob(
-                                        jobId,
-                                        new Exception(
-                                                "Job " + jobId + "was removed because of timeout"));
+                                removeJob(jobId);
                             }
                         }
                     });

@@ -198,7 +198,7 @@ public class TaskExecutorOperatorEventHandlingTest extends TestLogger {
         }
 
         @Override
-        public void doInvoke() throws InterruptedException {
+        public void invoke() throws InterruptedException {
             waitUntilCancelled();
         }
 
@@ -217,7 +217,7 @@ public class TaskExecutorOperatorEventHandlingTest extends TestLogger {
         }
 
         @Override
-        public void doInvoke() throws Exception {
+        public void invoke() throws Exception {
             getEnvironment()
                     .getOperatorCoordinatorEventGateway()
                     .sendOperatorEventToCoordinator(

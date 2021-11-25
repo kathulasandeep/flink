@@ -54,15 +54,12 @@ public class ArrayDataSerializer
 
     private final int elementSize;
 
-    private final BinaryArrayWriter.NullSetter nullSetter;
-
     public ArrayDataSerializer(LogicalType eleType, TypeSerializer elementTypeSerializer) {
         super(eleType);
         this.elementType = eleType;
         this.elementTypeSerializer = elementTypeSerializer;
         this.elementSize = BinaryArrayData.calculateFixLengthPartSize(this.elementType);
         this.elementGetter = ArrayData.createElementGetter(elementType);
-        this.nullSetter = BinaryArrayWriter.createNullSetter(eleType);
     }
 
     @Override
@@ -102,7 +99,7 @@ public class ArrayDataSerializer
                 Object element = elementTypeSerializer.deserialize(source);
                 BinaryWriter.write(writer, i, element, elementType, elementTypeSerializer);
             } else {
-                nullSetter.setNull(writer, i);
+                writer.setNullAt(i);
             }
         }
         writer.complete();

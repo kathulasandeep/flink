@@ -259,14 +259,6 @@ private class NestedSchemaRewriter(schema: NestedSchema, builder: RexBuilder) ex
             (Option.empty, child)
           }
         }
-      case expr =>
-        // rewrite operands of the expression
-        val newExpr = expr.accept(this)
-        // rebuild FieldAccess
-        (
-          Some(
-            builder.makeFieldAccess(newExpr, fieldAccess.getField.getName, true)),
-          null)
     }
   }
 }
@@ -277,25 +269,18 @@ private class NestedSchemaRewriter(schema: NestedSchema, builder: RexBuilder) ex
 private class NestedSchemaExtractor(schema: NestedSchema) extends RexVisitorImpl[Unit](true) {
 
   override def visitFieldAccess(fieldAccess: RexFieldAccess): Unit = {
-    def internalVisit(fieldAccess: RexFieldAccess): (Boolean, Int, List[String]) = {
+    def internalVisit(fieldAccess: RexFieldAccess): (Int, List[String]) = {
       fieldAccess.getReferenceExpr match {
         case ref: RexInputRef =>
-          (true, ref.getIndex, List(ref.getName, fieldAccess.getField.getName))
+          (ref.getIndex, List(ref.getName, fieldAccess.getField.getName))
         case fac: RexFieldAccess =>
-          val (success, i, n) = internalVisit(fac)
-          (success, i, if (success) n :+ fieldAccess.getField.getName else null)
-        case expr =>
-          // only extract operands of the expression
-          expr.accept(this)
-          (false, -1, null)
+          val (i, n) = internalVisit(fac)
+          (i, n :+ fieldAccess.getField.getName)
       }
     }
 
     // extract the info
-    val (success, index, names) = internalVisit(fieldAccess)
-    if (!success) {
-      return
-    }
+    val (index, names) = internalVisit(fieldAccess)
 
     val topLevelNodeName = schema.inputRowType.getFieldNames.get(index)
     val topLevelNode = if (!schema.columns.contains(topLevelNodeName)) {

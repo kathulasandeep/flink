@@ -18,7 +18,6 @@
 package org.apache.flink.streaming.connectors.kinesis.internals.publisher.fanout;
 
 import org.apache.flink.annotation.Internal;
-import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.streaming.connectors.kinesis.proxy.KinesisProxyV2;
 import org.apache.flink.streaming.connectors.kinesis.proxy.KinesisProxyV2Interface;
 import org.apache.flink.util.Preconditions;
@@ -36,18 +35,15 @@ import software.amazon.awssdk.services.kinesis.model.SubscribeToShardEventStream
 import software.amazon.awssdk.services.kinesis.model.SubscribeToShardRequest;
 import software.amazon.awssdk.services.kinesis.model.SubscribeToShardResponseHandler;
 
-import java.time.Duration;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
-import static java.util.concurrent.TimeUnit.MILLISECONDS;
+import static java.util.concurrent.TimeUnit.SECONDS;
 
 /**
  * This class is responsible for acquiring an Enhanced Fan Out subscription and consuming records
@@ -68,13 +64,14 @@ import static java.util.concurrent.TimeUnit.MILLISECONDS;
  *   <li>{@link SubscriptionErrorEvent} - passes an exception from the network to the consumer
  * </ul>
  *
- * <p>The blocking queue has a maximum capacity of two. One slot is used for a record batch, the
- * remaining slot is reserved to completion events. At maximum capacity we will have two {@link
- * SubscribeToShardEvent} in memory (per instance of this class):
+ * <p>The blocking queue has a maximum capacity of 1 record. This allows backpressure to be applied
+ * closer to the network stack and results in record prefetch. At maximum capacity we will have
+ * three {@link SubscribeToShardEvent} in memory (per instance of this class):
  *
  * <ul>
  *   <li>1 event being processed by the consumer
  *   <li>1 event enqueued in the blocking queue
+ *   <li>1 event being added to the queue by the network (blocking)
  * </ul>
  */
 @Internal
@@ -85,18 +82,18 @@ public class FanOutShardSubscriber {
     /**
      * The maximum capacity of the queue between the network and consumption thread. The queue is
      * mainly used to isolate networking from consumption such that errors do not bubble up. This
-     * queue also acts as a buffer resulting in a record prefetch and reduced latency. Capacity is 2
-     * to allow 1 pending record batch and leave room for a completion event to avoid any writer
-     * thread blocking on the queue.
+     * queue also acts as a buffer resulting in a record prefetch and reduced latency.
      */
-    private static final int QUEUE_CAPACITY = 2;
+    private static final int QUEUE_CAPACITY = 1;
 
     /**
      * Read timeout will occur after 30 seconds, a sanity timeout to prevent lockup in unexpected
-     * error states. If the consumer does not receive a new event within the QUEUE_TIMEOUT_SECONDS
-     * it will backoff and resubscribe.
+     * error states. If the consumer does not receive a new event within the DEQUEUE_WAIT_SECONDS it
+     * will backoff and resubscribe. Under normal conditions heartbeat events are received even when
+     * there are no records to consume, so it is not expected for this timeout to occur under normal
+     * conditions.
      */
-    private static final Duration DEFAULT_QUEUE_TIMEOUT = Duration.ofSeconds(35);
+    private static final int DEQUEUE_WAIT_SECONDS = 35;
 
     private final BlockingQueue<FanOutSubscriptionEvent> queue =
             new LinkedBlockingQueue<>(QUEUE_CAPACITY);
@@ -110,49 +107,18 @@ public class FanOutShardSubscriber {
 
     private final String shardId;
 
-    private final Duration subscribeToShardTimeout;
-
-    private final Duration queueWaitTimeout;
-
     /**
-     * Create a new Fan Out Shard subscriber.
+     * Create a new Fan Out subscriber.
      *
      * @param consumerArn the stream consumer ARN
      * @param shardId the shard ID to subscribe to
      * @param kinesis the Kinesis Proxy used to communicate via AWS SDK v2
-     * @param subscribeToShardTimeout A timeout when waiting for a shard subscription to be
-     *     established
      */
     FanOutShardSubscriber(
-            final String consumerArn,
-            final String shardId,
-            final KinesisProxyV2Interface kinesis,
-            final Duration subscribeToShardTimeout) {
-        this(consumerArn, shardId, kinesis, subscribeToShardTimeout, DEFAULT_QUEUE_TIMEOUT);
-    }
-
-    /**
-     * Create a new Fan Out Shard Subscriber.
-     *
-     * @param consumerArn the stream consumer ARN
-     * @param shardId the shard ID to subscribe to
-     * @param kinesis the Kinesis Proxy used to communicate via AWS SDK v2
-     * @param subscribeToShardTimeout A timeout when waiting for a shard subscription to be
-     *     established
-     * @param queueWaitTimeout A timeout when enqueuing/de-queueing
-     */
-    @VisibleForTesting
-    FanOutShardSubscriber(
-            final String consumerArn,
-            final String shardId,
-            final KinesisProxyV2Interface kinesis,
-            final Duration subscribeToShardTimeout,
-            final Duration queueWaitTimeout) {
+            final String consumerArn, final String shardId, final KinesisProxyV2Interface kinesis) {
         this.kinesis = Preconditions.checkNotNull(kinesis);
         this.consumerArn = Preconditions.checkNotNull(consumerArn);
         this.shardId = Preconditions.checkNotNull(shardId);
-        this.subscribeToShardTimeout = subscribeToShardTimeout;
-        this.queueWaitTimeout = queueWaitTimeout;
     }
 
     /**
@@ -173,9 +139,8 @@ public class FanOutShardSubscriber {
             throws InterruptedException, FanOutSubscriberException {
         LOG.debug("Subscribing to shard {} ({})", shardId, consumerArn);
 
-        final FanOutShardSubscription subscription;
         try {
-            subscription = openSubscriptionToShard(startingPosition);
+            openSubscriptionToShard(startingPosition);
         } catch (FanOutSubscriberException ex) {
             // The only exception that should cause a failure is a ResourceNotFoundException
             // Rethrow the exception to trigger the application to terminate
@@ -186,7 +151,7 @@ public class FanOutShardSubscriber {
             throw ex;
         }
 
-        return consumeAllRecordsFromKinesisShard(eventConsumer, subscription);
+        return consumeAllRecordsFromKinesisShard(eventConsumer);
     }
 
     /**
@@ -198,7 +163,7 @@ public class FanOutShardSubscriber {
      * @param startingPosition the position in which to start consuming from
      * @throws FanOutSubscriberException when an exception is propagated from the networking stack
      */
-    private FanOutShardSubscription openSubscriptionToShard(final StartingPosition startingPosition)
+    private void openSubscriptionToShard(final StartingPosition startingPosition)
             throws FanOutSubscriberException, InterruptedException {
         SubscribeToShardRequest request =
                 SubscribeToShardRequest.builder()
@@ -231,18 +196,7 @@ public class FanOutShardSubscriber {
 
         kinesis.subscribeToShard(request, responseHandler);
 
-        boolean subscriptionEstablished =
-                waitForSubscriptionLatch.await(
-                        subscribeToShardTimeout.toMillis(), TimeUnit.MILLISECONDS);
-
-        if (!subscriptionEstablished) {
-            final String errorMessage =
-                    "Timed out acquiring subscription - " + shardId + " (" + consumerArn + ")";
-            LOG.error(errorMessage);
-            subscription.cancelSubscription();
-            handleError(
-                    new RecoverableFanOutSubscriberException(new TimeoutException(errorMessage)));
-        }
+        waitForSubscriptionLatch.await();
 
         Throwable throwable = exception.get();
         if (throwable != null) {
@@ -254,8 +208,6 @@ public class FanOutShardSubscriber {
         // Request the first record to kick off consumption
         // Following requests are made by the FanOutShardSubscription on the netty thread
         subscription.requestRecord();
-
-        return subscription;
     }
 
     /**
@@ -280,11 +232,7 @@ public class FanOutShardSubscriber {
                 consumerArn,
                 cause);
 
-        if (isInterrupted(throwable)) {
-            throw new FanOutSubscriberInterruptedException(throwable);
-        } else if (cause instanceof FanOutSubscriberException) {
-            throw (FanOutSubscriberException) cause;
-        } else if (cause instanceof ReadTimeoutException) {
+        if (cause instanceof ReadTimeoutException) {
             // ReadTimeoutException occurs naturally under backpressure scenarios when full batches
             // take longer to
             // process than standard read timeout (default 30s). Recoverable exceptions are intended
@@ -298,19 +246,6 @@ public class FanOutShardSubscriber {
         }
     }
 
-    private boolean isInterrupted(final Throwable throwable) {
-        Throwable cause = throwable;
-        while (cause != null) {
-            if (cause instanceof InterruptedException) {
-                return true;
-            }
-
-            cause = cause.getCause();
-        }
-
-        return false;
-    }
-
     /**
      * Once the subscription is open, records will be delivered to the {@link BlockingQueue}. Queue
      * capacity is hardcoded to 1 record, the queue is used solely to separate consumption and
@@ -321,57 +256,52 @@ public class FanOutShardSubscriber {
      * while consuming records, indicated by a {@link SubscriptionErrorEvent}
      *
      * @param eventConsumer the event consumer to deliver records to
-     * @param subscription the subscription we are subscribed to
      * @return true if there are no more messages (complete), false if a subsequent subscription
      *     should be obtained
      * @throws FanOutSubscriberException when an exception is propagated from the networking stack
      * @throws InterruptedException when the thread is interrupted
      */
     private boolean consumeAllRecordsFromKinesisShard(
-            final Consumer<SubscribeToShardEvent> eventConsumer,
-            final FanOutShardSubscription subscription)
+            final Consumer<SubscribeToShardEvent> eventConsumer)
             throws InterruptedException, FanOutSubscriberException {
         String continuationSequenceNumber;
-        boolean result = true;
 
         do {
             FanOutSubscriptionEvent subscriptionEvent;
-            if (subscriptionErrorEvent.get() != null) {
+            if (queue.isEmpty() && subscriptionErrorEvent.get() != null) {
                 subscriptionEvent = subscriptionErrorEvent.get();
             } else {
-                // Read timeout occurs after 30 seconds, add a sanity timeout to prevent lockup
-                subscriptionEvent = queue.poll(queueWaitTimeout.toMillis(), MILLISECONDS);
+                // Read timeout will occur after 30 seconds, add a sanity timeout here to prevent
+                // lockup
+                subscriptionEvent = queue.poll(DEQUEUE_WAIT_SECONDS, SECONDS);
             }
 
             if (subscriptionEvent == null) {
-                LOG.info(
+                LOG.debug(
                         "Timed out polling events from network, reacquiring subscription - {} ({})",
                         shardId,
                         consumerArn);
-                result = false;
-                break;
+                return false;
             } else if (subscriptionEvent.isSubscribeToShardEvent()) {
-                // Request for KDS to send the next record batch
-                subscription.requestRecord();
-
                 SubscribeToShardEvent event = subscriptionEvent.getSubscribeToShardEvent();
                 continuationSequenceNumber = event.continuationSequenceNumber();
                 if (!event.records().isEmpty()) {
                     eventConsumer.accept(event);
                 }
             } else if (subscriptionEvent.isSubscriptionComplete()) {
+                if (subscriptionErrorEvent.get() != null) {
+                    handleError(subscriptionErrorEvent.get().getThrowable());
+                }
+
                 // The subscription is complete, but the shard might not be, so we return incomplete
-                result = false;
-                break;
+                return false;
             } else {
                 handleError(subscriptionEvent.getThrowable());
-                result = false;
-                break;
+                return false;
             }
         } while (continuationSequenceNumber != null);
 
-        subscription.cancelSubscription();
-        return result;
+        return true;
     }
 
     /**
@@ -416,6 +346,7 @@ public class FanOutShardSubscriber {
                         @Override
                         public void visit(SubscribeToShardEvent event) {
                             enqueueEvent(new SubscriptionNextEvent(event));
+                            requestRecord();
                         }
                     });
         }
@@ -430,19 +361,15 @@ public class FanOutShardSubscriber {
                     consumerArn,
                     throwable);
 
-            SubscriptionErrorEvent subscriptionErrorEvent = new SubscriptionErrorEvent(throwable);
-            if (FanOutShardSubscriber.this.subscriptionErrorEvent.get() == null) {
-                FanOutShardSubscriber.this.subscriptionErrorEvent.set(subscriptionErrorEvent);
-            } else {
-                LOG.warn("Error already queued. Ignoring subsequent exception.", throwable);
-            }
-
             // Cancel the subscription to signal the onNext to stop requesting data
             cancelSubscription();
 
-            // If there is space in the queue, insert the error to wake up blocked thread
-            if (queue.isEmpty()) {
-                queue.offer(subscriptionErrorEvent);
+            if (subscriptionErrorEvent.get() == null) {
+                subscriptionErrorEvent.set(new SubscriptionErrorEvent(throwable));
+            } else {
+                LOG.warn(
+                        "Previous error passed to consumer for processing. Ignoring subsequent exception.",
+                        throwable);
             }
         }
 
@@ -453,12 +380,8 @@ public class FanOutShardSubscriber {
         }
 
         private void cancelSubscription() {
-            if (cancelled) {
-                return;
-            }
-            cancelled = true;
-
-            if (subscription != null) {
+            if (!cancelled) {
+                cancelled = true;
                 subscription.cancel();
             }
         }
@@ -469,25 +392,8 @@ public class FanOutShardSubscriber {
          * @param event the event to enqueue
          */
         private void enqueueEvent(final FanOutSubscriptionEvent event) {
-            if (cancelled) {
-                return;
-            }
-
             try {
-                if (!queue.offer(event, queueWaitTimeout.toMillis(), TimeUnit.MILLISECONDS)) {
-                    final String errorMessage =
-                            "Timed out enqueuing event "
-                                    + event.getClass().getSimpleName()
-                                    + " - "
-                                    + shardId
-                                    + " ("
-                                    + consumerArn
-                                    + ")";
-                    LOG.error(errorMessage);
-                    onError(
-                            new RecoverableFanOutSubscriberException(
-                                    new TimeoutException(errorMessage)));
-                }
+                queue.put(event);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new RuntimeException(e);
@@ -528,16 +434,6 @@ public class FanOutShardSubscriber {
         private static final long serialVersionUID = -3223347557038294482L;
 
         public RecoverableFanOutSubscriberException(Throwable cause) {
-            super(cause);
-        }
-    }
-
-    /** An exception wrapper to indicate the subscriber has been interrupted. */
-    static class FanOutSubscriberInterruptedException extends FanOutSubscriberException {
-
-        private static final long serialVersionUID = -2783477408630427189L;
-
-        public FanOutSubscriberInterruptedException(Throwable cause) {
             super(cause);
         }
     }

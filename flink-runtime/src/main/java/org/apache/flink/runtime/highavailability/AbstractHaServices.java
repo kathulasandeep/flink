@@ -170,29 +170,20 @@ public abstract class AbstractHaServices implements HighAvailabilityServices {
 
         Throwable exception = null;
 
-        boolean deletedHAData = false;
-
         try {
-            internalCleanup();
-            deletedHAData = true;
-        } catch (Exception t) {
+            blobStoreService.closeAndCleanupAllData();
+        } catch (Throwable t) {
             exception = t;
         }
 
         try {
-            internalClose();
+            internalCleanup();
         } catch (Throwable t) {
             exception = ExceptionUtils.firstOrSuppressed(t, exception);
         }
 
         try {
-            if (deletedHAData) {
-                blobStoreService.closeAndCleanupAllData();
-            } else {
-                logger.info(
-                        "Cannot delete HA blobs because we failed to delete the pointers in the HA store.");
-                blobStoreService.close();
-            }
+            internalClose();
         } catch (Throwable t) {
             exception = ExceptionUtils.firstOrSuppressed(t, exception);
         }
@@ -203,13 +194,6 @@ public abstract class AbstractHaServices implements HighAvailabilityServices {
                     "Could not properly close and clean up all data of high availability service.");
         }
         logger.info("Finished cleaning up the high availability data.");
-    }
-
-    @Override
-    public void cleanupJobData(JobID jobID) throws Exception {
-        logger.info("Clean up the high availability data for job {}.", jobID);
-        internalCleanupJobData(jobID);
-        logger.info("Finished cleaning up the high availability data for job {}.", jobID);
     }
 
     /**
@@ -266,15 +250,6 @@ public abstract class AbstractHaServices implements HighAvailabilityServices {
      * @throws Exception when do the cleanup operation on external storage.
      */
     protected abstract void internalCleanup() throws Exception;
-
-    /**
-     * Clean up the meta data in the distributed system(e.g. Zookeeper, Kubernetes ConfigMap) for
-     * the specified Job.
-     *
-     * @param jobID The identifier of the job to cleanup.
-     * @throws Exception when do the cleanup operation on external storage.
-     */
-    protected abstract void internalCleanupJobData(JobID jobID) throws Exception;
 
     /**
      * Get the leader name for ResourceManager.

@@ -117,9 +117,9 @@ public class SingleCheckpointBarrierHandler extends CheckpointBarrierHandler {
             }
 
             if (getNumOpenChannels() == 1) {
-                markAlignmentStartAndEnd(barrierId, barrier.getTimestamp());
+                markAlignmentStartAndEnd(barrier.getTimestamp());
             } else {
-                markAlignmentStart(barrierId, barrier.getTimestamp());
+                markAlignmentStart(barrier.getTimestamp());
             }
             currentCheckpointId = barrierId;
             numBarriersReceived = 0;
@@ -187,9 +187,6 @@ public class SingleCheckpointBarrierHandler extends CheckpointBarrierHandler {
         currentCheckpointId = Math.max(cancelledId, currentCheckpointId);
         numBarriersReceived = 0;
         controller.abortPendingCheckpoint(cancelledId, exception);
-        if (cancelledId == currentCheckpointId) {
-            resetAlignment();
-        }
         notifyAbort(cancelledId, exception);
         allBarriersReceivedFuture.completeExceptionally(exception);
     }

@@ -162,7 +162,7 @@ public class ResourceManagerTaskExecutorTest extends TestLogger {
                         .build();
 
         JobLeaderIdService jobLeaderIdService =
-                new DefaultJobLeaderIdService(
+                new JobLeaderIdService(
                         highAvailabilityServices,
                         rpcService.getScheduledExecutor(),
                         Time.minutes(5L));
@@ -390,7 +390,7 @@ public class ResourceManagerTaskExecutorTest extends TestLogger {
                 registerTaskExecutor(rmGateway, invalidAddress);
         assertTrue(
                 invalidAddressFuture.get(TIMEOUT.toMilliseconds(), TimeUnit.MILLISECONDS)
-                        instanceof RegistrationResponse.Failure);
+                        instanceof RegistrationResponse.Decline);
     }
 
     private CompletableFuture<RegistrationResponse> registerTaskExecutor(

@@ -68,7 +68,7 @@ public class ByteArrayWrapperSerializer extends TypeSerializerSingleton<ByteArra
 
     @Override
     public void serialize(ByteArrayWrapper record, DataOutputView target) throws IOException {
-        target.writeInt(record.getLimit() - record.getOffset());
+        target.write(record.getLimit() - record.getOffset());
         target.write(record.getData(), record.getOffset(), record.getLimit() - record.getOffset());
     }
 
@@ -76,7 +76,7 @@ public class ByteArrayWrapperSerializer extends TypeSerializerSingleton<ByteArra
     public ByteArrayWrapper deserialize(DataInputView source) throws IOException {
         int length = source.readInt();
         byte[] result = new byte[length];
-        source.readFully(result);
+        source.read(result);
         return new ByteArrayWrapper(result);
     }
 
@@ -85,10 +85,8 @@ public class ByteArrayWrapperSerializer extends TypeSerializerSingleton<ByteArra
             throws IOException {
         int length = source.readInt();
         byte[] result = new byte[length];
-        source.readFully(result);
+        source.read(result);
         reuse.setData(result);
-        reuse.setOffset(0);
-        reuse.setLimit(result.length);
         return reuse;
     }
 
@@ -96,8 +94,8 @@ public class ByteArrayWrapperSerializer extends TypeSerializerSingleton<ByteArra
     public void copy(DataInputView source, DataOutputView target) throws IOException {
         int length = source.readInt();
         byte[] result = new byte[length];
-        source.readFully(result);
-        target.writeInt(length);
+        source.read(result);
+        target.write(length);
         target.write(result);
     }
 

@@ -49,8 +49,7 @@ import java.util.concurrent.RunnableFuture;
  * @param <K> type of the backend keys.
  */
 public abstract class RocksDBSnapshotStrategyBase<K>
-        extends AbstractSnapshotStrategy<KeyedStateHandle>
-        implements CheckpointListener, AutoCloseable {
+        extends AbstractSnapshotStrategy<KeyedStateHandle> implements CheckpointListener {
 
     private static final Logger LOG = LoggerFactory.getLogger(RocksDBSnapshotStrategyBase.class);
 
@@ -129,7 +128,4 @@ public abstract class RocksDBSnapshotStrategyBase<K>
             CheckpointStreamFactory streamFactory,
             CheckpointOptions checkpointOptions)
             throws Exception;
-
-    @Override
-    public abstract void close();
 }

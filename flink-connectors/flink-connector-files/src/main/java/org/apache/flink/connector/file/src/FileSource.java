@@ -23,7 +23,6 @@ import org.apache.flink.connector.file.src.assigners.FileSplitAssigner;
 import org.apache.flink.connector.file.src.assigners.LocalityAwareSplitAssigner;
 import org.apache.flink.connector.file.src.enumerate.BlockSplittingRecursiveEnumerator;
 import org.apache.flink.connector.file.src.enumerate.FileEnumerator;
-import org.apache.flink.connector.file.src.enumerate.NonSplittingRecursiveEnumerator;
 import org.apache.flink.connector.file.src.impl.FileRecordFormatAdapter;
 import org.apache.flink.connector.file.src.impl.StreamFormatAdapter;
 import org.apache.flink.connector.file.src.reader.BulkFormat;
@@ -120,7 +119,7 @@ public final class FileSource<T> extends AbstractFileSource<T, FileSourceSplit> 
      * with '.' or '_').
      */
     public static final FileEnumerator.Provider DEFAULT_NON_SPLITTABLE_FILE_ENUMERATOR =
-            NonSplittingRecursiveEnumerator::new;
+            BlockSplittingRecursiveEnumerator::new;
 
     // ------------------------------------------------------------------------
 

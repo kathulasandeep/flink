@@ -68,10 +68,6 @@ public class StreamTaskMailboxTestHarness<OUT> implements AutoCloseable {
         return streamTask;
     }
 
-    public TimerService getTimerService() {
-        return streamTask.getTimerService();
-    }
-
     /**
      * Get all the output from the task. This contains StreamRecords and Events interleaved. Use
      * {@link

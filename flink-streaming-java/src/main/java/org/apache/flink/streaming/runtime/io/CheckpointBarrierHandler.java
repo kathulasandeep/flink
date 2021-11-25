@@ -33,7 +33,6 @@ import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 
 import static org.apache.flink.util.Preconditions.checkNotNull;
-import static org.apache.flink.util.Preconditions.checkState;
 
 /**
  * The {@link CheckpointBarrierHandler} reacts to checkpoint barrier arriving from the input
@@ -57,9 +56,6 @@ public abstract class CheckpointBarrierHandler implements Closeable {
 
     /** The timestamp as in {@link System#nanoTime()} at which the last alignment started. */
     private long startOfAlignmentTimestamp = OUTSIDE_OF_ALIGNMENT;
-
-    /** ID of checkpoint for which alignment was started last. */
-    private long startAlignmentCheckpointId = -1;
 
     /**
      * Cumulative counter of bytes processed during alignment. Once we complete alignment, we will
@@ -108,25 +104,13 @@ public abstract class CheckpointBarrierHandler implements Closeable {
 
     protected void notifyCheckpoint(CheckpointBarrier checkpointBarrier) throws IOException {
         CheckpointMetaData checkpointMetaData =
-                new CheckpointMetaData(
-                        checkpointBarrier.getId(),
-                        checkpointBarrier.getTimestamp(),
-                        System.currentTimeMillis());
+                new CheckpointMetaData(checkpointBarrier.getId(), checkpointBarrier.getTimestamp());
 
-        CheckpointMetricsBuilder checkpointMetrics;
-        if (checkpointBarrier.getId() == startAlignmentCheckpointId) {
-            checkpointMetrics =
-                    new CheckpointMetricsBuilder()
-                            .setAlignmentDurationNanos(latestAlignmentDurationNanos)
-                            .setBytesProcessedDuringAlignment(latestBytesProcessedDuringAlignment)
-                            .setCheckpointStartDelayNanos(latestCheckpointStartDelayNanos);
-        } else {
-            checkpointMetrics =
-                    new CheckpointMetricsBuilder()
-                            .setAlignmentDurationNanos(0L)
-                            .setBytesProcessedDuringAlignment(0L)
-                            .setCheckpointStartDelayNanos(0);
-        }
+        CheckpointMetricsBuilder checkpointMetrics =
+                new CheckpointMetricsBuilder()
+                        .setAlignmentDurationNanos(latestAlignmentDurationNanos)
+                        .setBytesProcessedDuringAlignment(latestBytesProcessedDuringAlignment)
+                        .setCheckpointStartDelayNanos(latestCheckpointStartDelayNanos);
 
         toNotifyOnCheckpoint.triggerCheckpointOnBarrier(
                 checkpointMetaData, checkpointBarrier.getCheckpointOptions(), checkpointMetrics);
@@ -140,21 +124,21 @@ public abstract class CheckpointBarrierHandler implements Closeable {
     }
 
     protected void notifyAbort(long checkpointId, CheckpointException cause) throws IOException {
+        resetAlignment();
         toNotifyOnCheckpoint.abortCheckpointOnBarrier(checkpointId, cause);
     }
 
-    protected void markAlignmentStartAndEnd(long checkpointId, long checkpointCreationTimestamp) {
-        markAlignmentStart(checkpointId, checkpointCreationTimestamp);
+    protected void markAlignmentStartAndEnd(long checkpointCreationTimestamp) {
+        markAlignmentStart(checkpointCreationTimestamp);
         markAlignmentEnd(0);
     }
 
-    protected void markAlignmentStart(long checkpointId, long checkpointCreationTimestamp) {
+    protected void markAlignmentStart(long checkpointCreationTimestamp) {
         latestCheckpointStartDelayNanos =
                 1_000_000 * Math.max(0, System.currentTimeMillis() - checkpointCreationTimestamp);
 
         resetAlignment();
         startOfAlignmentTimestamp = System.nanoTime();
-        startAlignmentCheckpointId = checkpointId;
     }
 
     protected void markAlignmentEnd() {
@@ -162,11 +146,6 @@ public abstract class CheckpointBarrierHandler implements Closeable {
     }
 
     protected void markAlignmentEnd(long alignmentDuration) {
-        checkState(
-                alignmentDuration >= 0,
-                "Alignment time is less than zero({}). Is the time monotonic?",
-                alignmentDuration);
-
         latestAlignmentDurationNanos.complete(alignmentDuration);
         latestBytesProcessedDuringAlignment.complete(bytesProcessedDuringAlignment);
 
@@ -174,7 +153,7 @@ public abstract class CheckpointBarrierHandler implements Closeable {
         bytesProcessedDuringAlignment = 0;
     }
 
-    protected void resetAlignment() {
+    private void resetAlignment() {
         markAlignmentEnd(0);
         latestAlignmentDurationNanos = new CompletableFuture<>();
         latestBytesProcessedDuringAlignment = new CompletableFuture<>();

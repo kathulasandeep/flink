@@ -48,7 +48,7 @@ import org.apache.flink.runtime.jobmaster.ExecutionDeploymentTracker;
 import org.apache.flink.runtime.jobmaster.LogicalSlot;
 import org.apache.flink.runtime.jobmaster.slotpool.ThrowingSlotProvider;
 import org.apache.flink.runtime.metrics.groups.JobManagerJobMetricGroup;
-import org.apache.flink.runtime.operators.coordination.OperatorCoordinatorHolder;
+import org.apache.flink.runtime.operators.coordination.OperatorCoordinator;
 import org.apache.flink.runtime.rest.handler.legacy.backpressure.BackPressureStatsTracker;
 import org.apache.flink.runtime.scheduler.strategy.ExecutionVertexID;
 import org.apache.flink.runtime.scheduler.strategy.SchedulingStrategy;
@@ -322,10 +322,6 @@ public class DefaultScheduler extends SchedulerBase implements SchedulerOperatio
     }
 
     private CompletableFuture<?> cancelTasksAsync(final Set<ExecutionVertexID> verticesToRestart) {
-        // clean up all the related pending requests to avoid that immediately returned slot
-        // is used to fulfill the pending requests of these tasks
-        verticesToRestart.stream().forEach(executionSlotAllocator::cancel);
-
         final List<CompletableFuture<?>> cancelFutures =
                 verticesToRestart.stream()
                         .map(this::cancelExecutionVertex)
@@ -339,6 +335,7 @@ public class DefaultScheduler extends SchedulerBase implements SchedulerOperatio
 
         notifyCoordinatorOfCancellation(vertex);
 
+        executionSlotAllocator.cancel(executionVertexId);
         return executionVertexOperations.cancel(vertex);
     }
 
@@ -583,8 +580,7 @@ public class DefaultScheduler extends SchedulerBase implements SchedulerOperatio
             return;
         }
 
-        for (OperatorCoordinatorHolder coordinator :
-                vertex.getJobVertex().getOperatorCoordinators()) {
+        for (OperatorCoordinator coordinator : vertex.getJobVertex().getOperatorCoordinators()) {
             coordinator.subtaskFailed(vertex.getParallelSubtaskIndex(), null);
         }
     }

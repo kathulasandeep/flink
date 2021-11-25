@@ -154,7 +154,6 @@ public class ZooKeeperLeaderElectionTest extends TestLogger {
                     is(TEST_LEADER.getLeaderSessionID()));
             assertThat(retrievalEventHandler.getAddress(), is(TEST_LEADER.getLeaderAddress()));
         } finally {
-            electionEventHandler.close();
             if (leaderElectionDriver != null) {
                 leaderElectionDriver.close();
             }
@@ -402,7 +401,6 @@ public class ZooKeeperLeaderElectionTest extends TestLogger {
                     is(TEST_LEADER.getLeaderSessionID()));
             assertThat(retrievalEventHandler.getAddress(), is(TEST_LEADER.getLeaderAddress()));
         } finally {
-            electionEventHandler.close();
             if (leaderElectionDriver != null) {
                 leaderElectionDriver.close();
             }
@@ -452,7 +450,6 @@ public class ZooKeeperLeaderElectionTest extends TestLogger {
                             .isPresent(),
                     is(true));
         } finally {
-            electionEventHandler.close();
             if (leaderElectionDriver != null) {
                 leaderElectionDriver.close();
             }
@@ -531,7 +528,6 @@ public class ZooKeeperLeaderElectionTest extends TestLogger {
                 // that was expected
             }
         } finally {
-            electionEventHandler.close();
             if (leaderRetrievalDriver != null) {
                 leaderRetrievalDriver.close();
             }
@@ -581,7 +577,6 @@ public class ZooKeeperLeaderElectionTest extends TestLogger {
                     is(TEST_LEADER.getLeaderSessionID()));
             assertThat(retrievalEventHandler.getAddress(), is(TEST_LEADER.getLeaderAddress()));
         } finally {
-            electionEventHandler.close();
             if (leaderElectionDriver != null) {
                 leaderElectionDriver.close();
             }

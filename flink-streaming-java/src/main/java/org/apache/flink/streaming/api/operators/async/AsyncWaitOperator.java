@@ -151,7 +151,7 @@ public class AsyncWaitOperator<IN, OUT>
                 throw new IllegalStateException("Unknown async mode: " + outputMode + '.');
         }
 
-        this.timestampedCollector = new TimestampedCollector<>(super.output);
+        this.timestampedCollector = new TimestampedCollector<>(output);
     }
 
     @Override
@@ -186,7 +186,18 @@ public class AsyncWaitOperator<IN, OUT>
 
         // register a timeout for the entry if timeout is configured
         if (timeout > 0L) {
-            resultHandler.registerTimeout(getProcessingTimeService(), timeout);
+            final long timeoutTimestamp =
+                    timeout + getProcessingTimeService().getCurrentProcessingTime();
+
+            final ScheduledFuture<?> timeoutTimer =
+                    getProcessingTimeService()
+                            .registerTimer(
+                                    timeoutTimestamp,
+                                    timestamp ->
+                                            userFunction.timeout(
+                                                    element.getValue(), resultHandler));
+
+            resultHandler.setTimeoutTimer(timeoutTimer);
         }
 
         userFunction.asyncInvoke(element.getValue(), resultHandler);
@@ -316,6 +327,10 @@ public class AsyncWaitOperator<IN, OUT>
             this.resultFuture = resultFuture;
         }
 
+        void setTimeoutTimer(ScheduledFuture<?> timeoutTimer) {
+            this.timeoutTimer = timeoutTimer;
+        }
+
         @Override
         public void complete(Collection<OUT> results) {
             Preconditions.checkNotNull(
@@ -375,21 +390,6 @@ public class AsyncWaitOperator<IN, OUT>
             // leave potentially
             // blocking section in #addToWorkQueue or #waitInFlightInputsFinished)
             processInMailbox(Collections.emptyList());
-        }
-
-        public void registerTimeout(ProcessingTimeService processingTimeService, long timeout) {
-            final long timeoutTimestamp =
-                    timeout + processingTimeService.getCurrentProcessingTime();
-
-            timeoutTimer =
-                    processingTimeService.registerTimer(
-                            timeoutTimestamp, timestamp -> timerTriggered());
-        }
-
-        private void timerTriggered() throws Exception {
-            if (!completed.get()) {
-                userFunction.timeout(inputRecord.getValue(), this);
-            }
         }
     }
 }

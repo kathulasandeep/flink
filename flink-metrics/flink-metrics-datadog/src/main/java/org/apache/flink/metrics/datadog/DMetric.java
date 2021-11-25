@@ -18,9 +18,6 @@
 
 package org.apache.flink.metrics.datadog;
 
-import org.apache.flink.annotation.VisibleForTesting;
-
-import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.annotation.JsonGetter;
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.annotation.JsonIgnore;
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.annotation.JsonInclude;
 
@@ -31,43 +28,46 @@ import java.util.List;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public abstract class DMetric {
 
-    @VisibleForTesting static final String FIELD_NAME_TYPE = "type";
-    @VisibleForTesting static final String FIELD_NAME_METRIC = "metric";
-    @VisibleForTesting static final String FIELD_NAME_HOST = "host";
-    @VisibleForTesting static final String FIELD_NAME_TAGS = "tags";
-    @VisibleForTesting static final String FIELD_NAME_POINTS = "points";
+    /**
+     * Names of metric/type/tags field and their getters must not be changed since they are mapped
+     * to json objects in a Datadog-defined format.
+     */
+    private final String metric; // Metric name
 
-    private final MetricMetaData metaData;
+    private final MetricType type;
+    private final String host;
+    private final List<String> tags;
+    private final Clock clock;
 
-    public DMetric(MetricMetaData metaData) {
-        this.metaData = metaData;
+    public DMetric(
+            MetricType metricType, String metric, String host, List<String> tags, Clock clock) {
+        this.type = metricType;
+        this.metric = metric;
+        this.host = host;
+        this.tags = tags;
+        this.clock = clock;
     }
 
-    @JsonGetter(FIELD_NAME_TYPE)
     public MetricType getType() {
-        return metaData.getType();
+        return type;
     }
 
-    @JsonGetter(FIELD_NAME_METRIC)
-    public String getMetricName() {
-        return metaData.getMetricName();
+    public String getMetric() {
+        return metric;
     }
 
-    @JsonGetter(FIELD_NAME_HOST)
     public String getHost() {
-        return metaData.getHost();
+        return host;
     }
 
-    @JsonGetter(FIELD_NAME_TAGS)
     public List<String> getTags() {
-        return metaData.getTags();
+        return tags;
     }
 
-    @JsonGetter(FIELD_NAME_POINTS)
     public List<List<Number>> getPoints() {
         // One single data point
         List<Number> point = new ArrayList<>();
-        point.add(metaData.getClock().getUnixEpochTimestamp());
+        point.add(clock.getUnixEpochTimestamp());
         point.add(getMetricValue());
 
         List<List<Number>> points = new ArrayList<>();

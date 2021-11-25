@@ -39,6 +39,7 @@ import org.mockito.Mockito;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -63,7 +64,8 @@ public class ZooKeeperCompletedCheckpointStoreMockitoTest extends TestLogger {
             ZooKeeperCheckpointStoreUtil.INSTANCE;
 
     /**
-     * Tests that the completed checkpoint store can retrieve all checkpoints stored in ZooKeeper.
+     * Tests that the completed checkpoint store can retrieve all checkpoints stored in ZooKeeper
+     * and ignores those which cannot be retrieved via their state handles.
      *
      * <p>We have a timeout in case the ZooKeeper store get's into a deadlock/livelock situation.
      */
@@ -78,6 +80,11 @@ public class ZooKeeperCompletedCheckpointStoreMockitoTest extends TestLogger {
         final Collection<Long> expectedCheckpointIds = new HashSet<>(2);
         expectedCheckpointIds.add(1L);
         expectedCheckpointIds.add(2L);
+
+        final RetrievableStateHandle<CompletedCheckpoint> failingRetrievableStateHandle =
+                mock(RetrievableStateHandle.class);
+        when(failingRetrievableStateHandle.retrieveState())
+                .thenThrow(new IOException("Test exception"));
 
         final RetrievableStateHandle<CompletedCheckpoint> retrievableStateHandle1 =
                 mock(RetrievableStateHandle.class);
@@ -114,7 +121,9 @@ public class ZooKeeperCompletedCheckpointStoreMockitoTest extends TestLogger {
                                         new TestCompletedCheckpointStorageLocation())));
 
         checkpointsInZooKeeper.add(Tuple2.of(retrievableStateHandle1, "/foobar1"));
+        checkpointsInZooKeeper.add(Tuple2.of(failingRetrievableStateHandle, "/failing1"));
         checkpointsInZooKeeper.add(Tuple2.of(retrievableStateHandle2, "/foobar2"));
+        checkpointsInZooKeeper.add(Tuple2.of(failingRetrievableStateHandle, "/failing2"));
 
         final CuratorFramework client = mock(CuratorFramework.class, Mockito.RETURNS_DEEP_STUBS);
         final RetrievableStateStorageHelper<CompletedCheckpoint> storageHelperMock =
@@ -197,6 +206,10 @@ public class ZooKeeperCompletedCheckpointStoreMockitoTest extends TestLogger {
         // check that we did not discard any of the state handles
         verify(retrievableStateHandle1, never()).discardState();
         verify(retrievableStateHandle2, never()).discardState();
+
+        // Make sure that we also didn't discard any of the broken handles. Only when checkpoints
+        // are subsumed should they be discarded.
+        verify(failingRetrievableStateHandle, never()).discardState();
     }
 
     /**
@@ -216,6 +229,11 @@ public class ZooKeeperCompletedCheckpointStoreMockitoTest extends TestLogger {
         final Collection<Long> expectedCheckpointIds = new HashSet<>(2);
         expectedCheckpointIds.add(1L);
         expectedCheckpointIds.add(2L);
+
+        final RetrievableStateHandle<CompletedCheckpoint> failingRetrievableStateHandle =
+                mock(RetrievableStateHandle.class);
+        when(failingRetrievableStateHandle.retrieveState())
+                .thenThrow(new IOException("Test exception"));
 
         final RetrievableStateHandle<CompletedCheckpoint> retrievableStateHandle1 =
                 mock(RetrievableStateHandle.class);
@@ -250,7 +268,9 @@ public class ZooKeeperCompletedCheckpointStoreMockitoTest extends TestLogger {
                                         new TestCompletedCheckpointStorageLocation())));
 
         checkpointsInZooKeeper.add(Tuple2.of(retrievableStateHandle1, "/foobar1"));
+        checkpointsInZooKeeper.add(Tuple2.of(failingRetrievableStateHandle, "/failing1"));
         checkpointsInZooKeeper.add(Tuple2.of(retrievableStateHandle2, "/foobar2"));
+        checkpointsInZooKeeper.add(Tuple2.of(failingRetrievableStateHandle, "/failing2"));
 
         final CuratorFramework client = mock(CuratorFramework.class, Mockito.RETURNS_DEEP_STUBS);
         final RetrievableStateStorageHelper<CompletedCheckpoint> storageHelperMock =
@@ -333,5 +353,9 @@ public class ZooKeeperCompletedCheckpointStoreMockitoTest extends TestLogger {
         // check that we did not discard any of the state handles
         verify(retrievableStateHandle1, never()).discardState();
         verify(retrievableStateHandle2, never()).discardState();
+
+        // Make sure that we also didn't discard any of the broken handles. Only when checkpoints
+        // are subsumed should they be discarded.
+        verify(failingRetrievableStateHandle, never()).discardState();
     }
 }

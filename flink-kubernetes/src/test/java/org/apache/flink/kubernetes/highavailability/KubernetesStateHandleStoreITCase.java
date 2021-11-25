@@ -21,8 +21,9 @@ package org.apache.flink.kubernetes.highavailability;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.kubernetes.KubernetesResource;
 import org.apache.flink.kubernetes.configuration.KubernetesLeaderElectionConfiguration;
+import org.apache.flink.kubernetes.kubeclient.DefaultKubeClientFactory;
 import org.apache.flink.kubernetes.kubeclient.FlinkKubeClient;
-import org.apache.flink.kubernetes.kubeclient.FlinkKubeClientFactory;
+import org.apache.flink.kubernetes.kubeclient.KubeClientFactory;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesLeaderElector;
 import org.apache.flink.kubernetes.kubeclient.resources.TestingLeaderCallbackHandler;
 import org.apache.flink.runtime.persistence.TestingLongStateHandleHelper;
@@ -49,7 +50,7 @@ public class KubernetesStateHandleStoreITCase extends TestLogger {
 
     @ClassRule public static KubernetesResource kubernetesResource = new KubernetesResource();
 
-    private final FlinkKubeClientFactory kubeClientFactory = new FlinkKubeClientFactory();
+    private final KubeClientFactory kubeClientFactory = new DefaultKubeClientFactory();
 
     private static final long TIMEOUT = 120L * 1000L;
 
@@ -68,13 +69,13 @@ public class KubernetesStateHandleStoreITCase extends TestLogger {
                 new TestingLeaderCallbackHandler[leaderNum];
 
         @SuppressWarnings("unchecked")
-        final KubernetesStateHandleStore<TestingLongStateHandleHelper.LongStateHandle>[]
-                stateHandleStores = new KubernetesStateHandleStore[leaderNum];
+        final KubernetesStateHandleStore<Long>[] stateHandleStores =
+                new KubernetesStateHandleStore[leaderNum];
 
         try {
             for (int i = 0; i < leaderNum; i++) {
                 final String lockIdentity = UUID.randomUUID().toString();
-                kubeClients[i] = kubeClientFactory.fromConfiguration(configuration, "testing");
+                kubeClients[i] = kubeClientFactory.fromConfiguration(configuration);
                 leaderCallbackHandlers[i] = new TestingLeaderCallbackHandler(lockIdentity);
                 leaderElectors[i] =
                         kubeClients[i].createLeaderElector(
@@ -103,19 +104,17 @@ public class KubernetesStateHandleStoreITCase extends TestLogger {
                 if (leaderCallbackHandlers[i].getLockIdentity().equals(lockIdentity)) {
                     expectedState = (long) i;
                 }
-                stateHandleStores[i].addAndLock(
-                        KEY, new TestingLongStateHandleHelper.LongStateHandle(i));
+                stateHandleStores[i].addAndLock(KEY, (long) i);
             }
 
             // Only the leader could add successfully
             assertThat(expectedState, is(notNullValue()));
             assertThat(stateHandleStores[0].getAllAndLock().size(), is(1));
             assertThat(
-                    stateHandleStores[0].getAllAndLock().get(0).f0.retrieveState().getValue(),
+                    stateHandleStores[0].getAllAndLock().get(0).f0.retrieveState(),
                     is(expectedState));
             assertThat(stateHandleStores[0].getAllAndLock().get(0).f1, is(KEY));
         } finally {
-            TestingLongStateHandleHelper.clearGlobalState();
             // Cleanup the resources
             for (int i = 0; i < leaderNum; i++) {
                 if (leaderElectors[i] != null) {

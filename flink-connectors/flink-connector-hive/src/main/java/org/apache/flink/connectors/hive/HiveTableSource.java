@@ -183,8 +183,8 @@ public class HiveTableSource
                                 hiveShim,
                                 new JobConfWrapper(jobConf),
                                 catalogTable.getPartitionKeys(),
-                                getTableSchema().getFieldDataTypes(),
-                                getTableSchema().getFieldNames(),
+                                getProducedTableSchema().getFieldDataTypes(),
+                                getProducedTableSchema().getFieldNames(),
                                 configuration,
                                 defaultPartitionName);
                 sourceBuilder.setFetcherContext(fetcherContext);

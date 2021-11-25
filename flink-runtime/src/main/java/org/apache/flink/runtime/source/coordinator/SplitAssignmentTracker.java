@@ -23,7 +23,10 @@ import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.api.connector.source.SourceSplit;
 import org.apache.flink.api.connector.source.SplitEnumerator;
 import org.apache.flink.api.connector.source.SplitsAssignment;
+import org.apache.flink.core.io.SimpleVersionedSerializer;
 
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -32,6 +35,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
+
+import static org.apache.flink.runtime.source.coordinator.SourceCoordinatorSerdeUtils.readAssignmentsByCheckpointId;
+import static org.apache.flink.runtime.source.coordinator.SourceCoordinatorSerdeUtils.writeAssignmentsByCheckpointId;
 
 /**
  * A class that is responsible for tracking the past split assignments made by {@link
@@ -53,15 +59,34 @@ public class SplitAssignmentTracker<SplitT extends SourceSplit> {
     }
 
     /**
-     * Behavior of SplitAssignmentTracker on checkpoint. Tracker will mark uncheckpointed assignment
-     * as checkpointed with current checkpoint ID.
+     * Take a snapshot of the uncheckpointed split assignments.
      *
      * @param checkpointId the id of the ongoing checkpoint
      */
-    public void onCheckpoint(long checkpointId) throws Exception {
+    public void snapshotState(
+            long checkpointId,
+            SimpleVersionedSerializer<SplitT> splitSerializer,
+            DataOutputStream out)
+            throws Exception {
         // Include the uncheckpointed assignments to the snapshot.
         assignmentsByCheckpointId.put(checkpointId, uncheckpointedAssignments);
         uncheckpointedAssignments = new HashMap<>();
+        writeAssignmentsByCheckpointId(assignmentsByCheckpointId, splitSerializer, out);
+    }
+
+    /**
+     * Restore the state of the SplitAssignmentTracker.
+     *
+     * @param splitSerializer The serializer of the splits.
+     * @param in The ObjectInput that contains the state of the SplitAssignmentTracker.
+     * @throws Exception when the state deserialization fails.
+     */
+    public void restoreState(SimpleVersionedSerializer<SplitT> splitSerializer, DataInputStream in)
+            throws Exception {
+        // Read the split assignments by checkpoint id.
+        Map<Long, Map<Integer, LinkedHashSet<SplitT>>> deserializedAssignments =
+                readAssignmentsByCheckpointId(in, splitSerializer);
+        assignmentsByCheckpointId.putAll(deserializedAssignments);
     }
 
     /**

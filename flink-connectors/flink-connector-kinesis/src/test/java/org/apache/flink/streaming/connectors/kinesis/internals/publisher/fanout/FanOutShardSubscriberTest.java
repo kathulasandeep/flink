@@ -17,20 +17,14 @@
 
 package org.apache.flink.streaming.connectors.kinesis.internals.publisher.fanout;
 
-import org.apache.flink.streaming.connectors.kinesis.proxy.KinesisProxyV2Interface;
 import org.apache.flink.streaming.connectors.kinesis.testutils.FakeKinesisFanOutBehavioursFactory;
 import org.apache.flink.streaming.connectors.kinesis.testutils.FakeKinesisFanOutBehavioursFactory.SubscriptionErrorKinesisV2;
 
-import com.amazonaws.http.timers.client.SdkInterruptedException;
 import io.netty.handler.timeout.ReadTimeoutException;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
 import software.amazon.awssdk.services.kinesis.model.StartingPosition;
-
-import java.time.Duration;
-
-import static org.apache.flink.streaming.connectors.kinesis.config.ConsumerConfigConstants.DEFAULT_SUBSCRIBE_TO_SHARD_TIMEOUT;
 
 /** Tests for {@link FanOutShardSubscriber}. */
 public class FanOutShardSubscriberTest {
@@ -47,11 +41,7 @@ public class FanOutShardSubscriberTest {
                         ReadTimeoutException.INSTANCE);
 
         FanOutShardSubscriber subscriber =
-                new FanOutShardSubscriber(
-                        "consumerArn",
-                        "shardId",
-                        errorKinesisV2,
-                        DEFAULT_SUBSCRIBE_TO_SHARD_TIMEOUT);
+                new FanOutShardSubscriber("consumerArn", "shardId", errorKinesisV2);
 
         software.amazon.awssdk.services.kinesis.model.StartingPosition startingPosition =
                 software.amazon.awssdk.services.kinesis.model.StartingPosition.builder().build();
@@ -68,31 +58,7 @@ public class FanOutShardSubscriberTest {
                 FakeKinesisFanOutBehavioursFactory.errorDuringSubscription(error);
 
         FanOutShardSubscriber subscriber =
-                new FanOutShardSubscriber(
-                        "consumerArn",
-                        "shardId",
-                        errorKinesisV2,
-                        DEFAULT_SUBSCRIBE_TO_SHARD_TIMEOUT);
-
-        software.amazon.awssdk.services.kinesis.model.StartingPosition startingPosition =
-                software.amazon.awssdk.services.kinesis.model.StartingPosition.builder().build();
-        subscriber.subscribeToShardAndConsumeRecords(startingPosition, event -> {});
-    }
-
-    @Test
-    public void testInterruptedErrorThrownToConsumer() throws Exception {
-        thrown.expect(FanOutShardSubscriber.FanOutSubscriberInterruptedException.class);
-
-        SdkInterruptedException error = new SdkInterruptedException(null);
-        SubscriptionErrorKinesisV2 errorKinesisV2 =
-                FakeKinesisFanOutBehavioursFactory.errorDuringSubscription(error);
-
-        FanOutShardSubscriber subscriber =
-                new FanOutShardSubscriber(
-                        "consumerArn",
-                        "shardId",
-                        errorKinesisV2,
-                        DEFAULT_SUBSCRIBE_TO_SHARD_TIMEOUT);
+                new FanOutShardSubscriber("consumerArn", "shardId", errorKinesisV2);
 
         software.amazon.awssdk.services.kinesis.model.StartingPosition startingPosition =
                 software.amazon.awssdk.services.kinesis.model.StartingPosition.builder().build();
@@ -110,56 +76,9 @@ public class FanOutShardSubscriberTest {
                 FakeKinesisFanOutBehavioursFactory.errorDuringSubscription(error1, error2);
 
         FanOutShardSubscriber subscriber =
-                new FanOutShardSubscriber(
-                        "consumerArn",
-                        "shardId",
-                        errorKinesisV2,
-                        DEFAULT_SUBSCRIBE_TO_SHARD_TIMEOUT);
+                new FanOutShardSubscriber("consumerArn", "shardId", errorKinesisV2);
 
         StartingPosition startingPosition = StartingPosition.builder().build();
         subscriber.subscribeToShardAndConsumeRecords(startingPosition, event -> {});
-    }
-
-    @Test
-    public void testTimeoutSubscribingToShard() throws Exception {
-        thrown.expect(FanOutShardSubscriber.RecoverableFanOutSubscriberException.class);
-        thrown.expectMessage("Timed out acquiring subscription");
-
-        KinesisProxyV2Interface kinesis =
-                FakeKinesisFanOutBehavioursFactory.failsToAcquireSubscription();
-
-        FanOutShardSubscriber subscriber =
-                new FanOutShardSubscriber("consumerArn", "shardId", kinesis, Duration.ofMillis(1));
-
-        StartingPosition startingPosition = StartingPosition.builder().build();
-        subscriber.subscribeToShardAndConsumeRecords(startingPosition, event -> {});
-    }
-
-    @Test
-    public void testTimeoutEnqueuingEvent() throws Exception {
-        thrown.expect(FanOutShardSubscriber.RecoverableFanOutSubscriberException.class);
-        thrown.expectMessage("Timed out enqueuing event SubscriptionNextEvent");
-
-        KinesisProxyV2Interface kinesis =
-                FakeKinesisFanOutBehavioursFactory.shardThatCreatesBackpressureOnQueue();
-
-        FanOutShardSubscriber subscriber =
-                new FanOutShardSubscriber(
-                        "consumerArn",
-                        "shardId",
-                        kinesis,
-                        DEFAULT_SUBSCRIBE_TO_SHARD_TIMEOUT,
-                        Duration.ofMillis(100));
-
-        StartingPosition startingPosition = StartingPosition.builder().build();
-        subscriber.subscribeToShardAndConsumeRecords(
-                startingPosition,
-                event -> {
-                    try {
-                        Thread.sleep(120);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
-                });
     }
 }

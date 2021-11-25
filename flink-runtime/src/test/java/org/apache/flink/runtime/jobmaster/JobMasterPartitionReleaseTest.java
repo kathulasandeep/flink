@@ -31,7 +31,6 @@ import org.apache.flink.runtime.execution.ExecutionState;
 import org.apache.flink.runtime.heartbeat.HeartbeatServices;
 import org.apache.flink.runtime.highavailability.TestingHighAvailabilityServices;
 import org.apache.flink.runtime.io.network.partition.TestingJobMasterPartitionTracker;
-import org.apache.flink.runtime.jobgraph.JobGraph;
 import org.apache.flink.runtime.jobgraph.utils.JobGraphTestUtils;
 import org.apache.flink.runtime.jobmaster.utils.JobMasterBuilder;
 import org.apache.flink.runtime.leaderretrieval.SettableLeaderRetrievalService;
@@ -222,9 +221,8 @@ public class JobMasterPartitionReleaseTest extends TestLogger {
 
             HeartbeatServices heartbeatServices = new HeartbeatServices(1000L, 5_000_000L);
 
-            final JobGraph jobGraph = JobGraphTestUtils.createSingleVertexJobGraph();
             jobMaster =
-                    new JobMasterBuilder(jobGraph, rpcService)
+                    new JobMasterBuilder(JobGraphTestUtils.createSingleVertexJobGraph(), rpcService)
                             .withConfiguration(configuration)
                             .withHighAvailabilityServices(haServices)
                             .withJobManagerSharedServices(
@@ -236,14 +234,12 @@ public class JobMasterPartitionReleaseTest extends TestLogger {
 
             jobMaster.start(JobMasterId.generate()).get();
 
-            registerTaskExecutorAtJobMaster(
-                    rpcService, getJobMasterGateway(), jobGraph.getJobID(), taskExecutorGateway);
+            registerTaskExecutorAtJobMaster(rpcService, getJobMasterGateway(), taskExecutorGateway);
         }
 
         private void registerTaskExecutorAtJobMaster(
                 TestingRpcService rpcService,
                 JobMasterGateway jobMasterGateway,
-                JobID jobId,
                 TaskExecutorGateway taskExecutorGateway)
                 throws ExecutionException, InterruptedException {
 
@@ -253,7 +249,6 @@ public class JobMasterPartitionReleaseTest extends TestLogger {
                     .registerTaskManager(
                             taskExecutorGateway.getAddress(),
                             localTaskManagerUnresolvedLocation,
-                            jobId,
                             testingTimeout)
                     .get();
 

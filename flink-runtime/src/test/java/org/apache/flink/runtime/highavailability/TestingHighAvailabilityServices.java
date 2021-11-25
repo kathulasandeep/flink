@@ -28,8 +28,6 @@ import org.apache.flink.runtime.leaderelection.LeaderElectionService;
 import org.apache.flink.runtime.leaderretrieval.LeaderRetrievalService;
 
 import java.io.IOException;
-import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
@@ -68,12 +66,6 @@ public class TestingHighAvailabilityServices implements HighAvailabilityServices
     private volatile JobGraphStore jobGraphStore;
 
     private volatile RunningJobsRegistry runningJobsRegistry = new StandaloneRunningJobsRegistry();
-
-    private CompletableFuture<Void> closeFuture = new CompletableFuture<>();
-
-    private CompletableFuture<Void> closeAndCleanupAllDataFuture = new CompletableFuture<>();
-
-    private volatile CompletableFuture<JobID> jobCleanupFuture;
 
     // ------------------------------------------------------------------------
     //  Setters for mock / testing implementations
@@ -137,19 +129,6 @@ public class TestingHighAvailabilityServices implements HighAvailabilityServices
     public void setJobMasterLeaderRetrieverFunction(
             Function<JobID, LeaderRetrievalService> jobMasterLeaderRetrieverFunction) {
         this.jobMasterLeaderRetrieverFunction = jobMasterLeaderRetrieverFunction;
-    }
-
-    public void setCloseFuture(CompletableFuture<Void> closeFuture) {
-        this.closeFuture = closeFuture;
-    }
-
-    public void setCloseAndCleanupAllDataFuture(
-            CompletableFuture<Void> closeAndCleanupAllDataFuture) {
-        this.closeAndCleanupAllDataFuture = closeAndCleanupAllDataFuture;
-    }
-
-    public void setCleanupJobDataFuture(CompletableFuture<JobID> jobCleanupFuture) {
-        this.jobCleanupFuture = jobCleanupFuture;
     }
 
     // ------------------------------------------------------------------------
@@ -277,16 +256,11 @@ public class TestingHighAvailabilityServices implements HighAvailabilityServices
 
     @Override
     public void close() throws Exception {
-        closeFuture.complete(null);
+        // nothing to do
     }
 
     @Override
     public void closeAndCleanupAllData() throws Exception {
-        closeAndCleanupAllDataFuture.complete(null);
-    }
-
-    @Override
-    public void cleanupJobData(JobID jobID) {
-        Optional.ofNullable(jobCleanupFuture).ifPresent(f -> f.complete(jobID));
+        // nothing to do
     }
 }

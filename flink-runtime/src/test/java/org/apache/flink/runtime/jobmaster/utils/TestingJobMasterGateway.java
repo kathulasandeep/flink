@@ -111,11 +111,8 @@ public class TestingJobMasterGateway implements JobMasterGateway {
     @Nonnull private final TriConsumer<ResourceID, AllocationID, Throwable> failSlotConsumer;
 
     @Nonnull
-    private final TriFunction<
-                    String,
-                    UnresolvedTaskManagerLocation,
-                    JobID,
-                    CompletableFuture<RegistrationResponse>>
+    private final BiFunction<
+                    String, UnresolvedTaskManagerLocation, CompletableFuture<RegistrationResponse>>
             registerTaskManagerFunction;
 
     @Nonnull
@@ -216,10 +213,9 @@ public class TestingJobMasterGateway implements JobMasterGateway {
                             offerSlotsFunction,
             @Nonnull TriConsumer<ResourceID, AllocationID, Throwable> failSlotConsumer,
             @Nonnull
-                    TriFunction<
+                    BiFunction<
                                     String,
                                     UnresolvedTaskManagerLocation,
-                                    JobID,
                                     CompletableFuture<RegistrationResponse>>
                             registerTaskManagerFunction,
             @Nonnull
@@ -369,10 +365,9 @@ public class TestingJobMasterGateway implements JobMasterGateway {
     public CompletableFuture<RegistrationResponse> registerTaskManager(
             String taskManagerRpcAddress,
             UnresolvedTaskManagerLocation unresolvedTaskManagerLocation,
-            JobID jobId,
             Time timeout) {
         return registerTaskManagerFunction.apply(
-                taskManagerRpcAddress, unresolvedTaskManagerLocation, jobId);
+                taskManagerRpcAddress, unresolvedTaskManagerLocation);
     }
 
     @Override

@@ -58,10 +58,8 @@ public class YearMonthIntervalPeriodConverter
     // --------------------------------------------------------------------------------------------
 
     public static YearMonthIntervalPeriodConverter create(DataType dataType) {
-        return create((YearMonthIntervalType) dataType.getLogicalType());
-    }
-
-    public static YearMonthIntervalPeriodConverter create(YearMonthIntervalType intervalType) {
+        final YearMonthIntervalType intervalType =
+                (YearMonthIntervalType) dataType.getLogicalType();
         return new YearMonthIntervalPeriodConverter(
                 createPeriodConstructor(intervalType.getResolution()));
     }

@@ -41,7 +41,6 @@ import java.util.concurrent.ExecutionException;
 
 import static org.hamcrest.core.Is.is;
 import static org.hamcrest.core.StringContains.containsString;
-import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThat;
 
 /** Test for the {@link DispatcherJob} class. */
@@ -210,7 +209,8 @@ public class DispatcherJobTest extends TestLogger {
 
         // ensure the result future is complete (how it completes is up to the JobManager)
         CompletableFuture<DispatcherJobResult> resultFuture = dispatcherJob.getResultFuture();
-        assertSuspendedExecutionGraph(resultFuture);
+        CommonTestUtils.assertThrows(
+                "has not been finished", ExecutionException.class, resultFuture::get);
     }
 
     @Test
@@ -245,13 +245,8 @@ public class DispatcherJobTest extends TestLogger {
 
         // result future should complete exceptionally.
         CompletableFuture<DispatcherJobResult> resultFuture = dispatcherJob.getResultFuture();
-        assertSuspendedExecutionGraph(resultFuture);
-    }
-
-    private void assertSuspendedExecutionGraph(CompletableFuture<DispatcherJobResult> resultFuture)
-            throws ExecutionException, InterruptedException {
-        assertEquals(
-                resultFuture.get().getArchivedExecutionGraph().getState(), JobStatus.SUSPENDED);
+        CommonTestUtils.assertThrows(
+                "has not been finished", ExecutionException.class, resultFuture::get);
     }
 
     @Test(expected = IllegalStateException.class)

@@ -23,9 +23,7 @@ package org.apache.flink.runtime.registration;
  * RegisteredRpcConnection} have to implement this interface.
  */
 public interface RegistrationConnectionListener<
-        T extends RegisteredRpcConnection<?, ?, S, ?>,
-        S extends RegistrationResponse.Success,
-        R extends RegistrationResponse.Rejection> {
+        T extends RegisteredRpcConnection<?, ?, S>, S extends RegistrationResponse.Success> {
 
     /**
      * This method is called by the {@link RegisteredRpcConnection} when the registration is
@@ -42,13 +40,4 @@ public interface RegistrationConnectionListener<
      * @param failure The exception which causes the registration failure.
      */
     void onRegistrationFailure(Throwable failure);
-
-    /**
-     * This method is called by the {@link RegisteredRpcConnection} when the registration is
-     * rejected.
-     *
-     * @param targetAddress targetAddress from which the registration was rejected.
-     * @param rejection rejection containing more information.
-     */
-    void onRegistrationRejection(String targetAddress, R rejection);
 }

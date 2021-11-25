@@ -19,7 +19,6 @@
 package org.apache.flink.runtime.jobmaster;
 
 import org.apache.flink.api.common.JobID;
-import org.apache.flink.api.common.JobStatus;
 import org.apache.flink.core.testutils.OneShotLatch;
 import org.apache.flink.runtime.executiongraph.ArchivedExecutionGraph;
 import org.apache.flink.util.Preconditions;
@@ -52,11 +51,9 @@ public class TestingJobManagerRunner implements JobManagerRunner {
         this.resultFuture = resultFuture;
         this.terminationFuture = new CompletableFuture<>();
 
-        final ArchivedExecutionGraph suspendedExecutionGraph =
-                ArchivedExecutionGraph.createFromInitializingJob(
-                        jobId, "TestJob", JobStatus.SUSPENDED, null, 0L);
         terminationFuture.whenComplete(
-                (ignored, ignoredThrowable) -> resultFuture.complete(suspendedExecutionGraph));
+                (ignored, ignoredThrowable) ->
+                        resultFuture.completeExceptionally(new JobNotFinishedException(jobId)));
     }
 
     @Override

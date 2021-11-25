@@ -157,11 +157,6 @@ public class RocksFullSnapshotStrategy<K> extends RocksDBSnapshotStrategyBase<K>
         // nothing to do.
     }
 
-    @Override
-    public void close() {
-        // nothing to do.
-    }
-
     private SupplierWithException<CheckpointStreamWithResultProvider, Exception>
             createCheckpointStreamSupplier(
                     long checkpointId,

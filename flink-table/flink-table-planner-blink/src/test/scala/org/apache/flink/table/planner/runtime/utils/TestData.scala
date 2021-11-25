@@ -270,14 +270,6 @@ object TestData {
     data
   }
 
-  lazy val arrayRows = Array(
-    Row.of(new JInt(1)),
-    Row.of(new JInt(2)),
-    Row.of(new JInt(3)),
-    Row.of(new JInt(4)))
-
-  lazy val mapRows = map(("Monday", 1), ("Tuesday", 2), ("Wednesday", 3))
-
   lazy val deepNestedRow: Seq[Row] = {
     Seq(
       Row.of(new JLong(1),
@@ -286,24 +278,21 @@ object TestData {
           Row.of(new JInt(1000), new JBool(true))
         ),
         Row.of("Peter", new JInt(10000)),
-        "Mary",
-        Row.of(arrayRows, mapRows)),
+        "Mary"),
       Row.of(new JLong(2),
         Row.of(
           Row.of("Rob", new JInt(200)),
           Row.of(new JInt(2000), new JBool(false))
         ),
         Row.of("Lucy", new JInt(20000)),
-        "Bob",
-        Row.of(arrayRows, mapRows)),
+        "Bob"),
       Row.of(new JLong(3),
         Row.of(
           Row.of("Mike", new JInt(300)),
           Row.of(new JInt(3000), new JBool(true))
         ),
         Row.of("Betty", new JInt(30000)),
-        "Liz",
-        Row.of(arrayRows, mapRows)))
+        "Liz"))
   }
 
   lazy val tupleData5: Seq[(Int, Long, Int, String, Long)] = {

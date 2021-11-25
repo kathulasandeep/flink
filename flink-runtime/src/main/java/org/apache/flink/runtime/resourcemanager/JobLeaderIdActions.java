@@ -23,7 +23,7 @@ import org.apache.flink.runtime.jobmaster.JobMasterId;
 
 import java.util.UUID;
 
-/** Interface for actions called by the {@link DefaultJobLeaderIdService}. */
+/** Interface for actions called by the {@link JobLeaderIdService}. */
 public interface JobLeaderIdActions {
 
     /**

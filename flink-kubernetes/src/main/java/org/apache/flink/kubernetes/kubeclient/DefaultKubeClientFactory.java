@@ -18,7 +18,6 @@
 
 package org.apache.flink.kubernetes.kubeclient;
 
-import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.kubernetes.configuration.KubernetesConfigOptions;
 import org.apache.flink.runtime.util.ExecutorThreadFactory;
@@ -28,36 +27,30 @@ import io.fabric8.kubernetes.client.Config;
 import io.fabric8.kubernetes.client.DefaultKubernetesClient;
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.NamespacedKubernetesClient;
-import io.fabric8.kubernetes.client.utils.Utils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
-/** A {@link FlinkKubeClientFactory} for creating the {@link FlinkKubeClient}. */
-public class FlinkKubeClientFactory {
+/** Default implementation of the {@link KubeClientFactory}. */
+public class DefaultKubeClientFactory implements KubeClientFactory {
 
-    private static final Logger LOG = LoggerFactory.getLogger(FlinkKubeClientFactory.class);
+    private static final Logger LOG = LoggerFactory.getLogger(DefaultKubeClientFactory.class);
 
-    private static final FlinkKubeClientFactory INSTANCE = new FlinkKubeClientFactory();
+    private static final DefaultKubeClientFactory INSTANCE = new DefaultKubeClientFactory();
 
-    public static FlinkKubeClientFactory getInstance() {
+    public static DefaultKubeClientFactory getInstance() {
         return INSTANCE;
     }
 
-    /**
-     * Create a Flink Kubernetes client with the given configuration.
-     *
-     * @param flinkConfig Flink configuration
-     * @param useCase Flink Kubernetes client use case (e.g. client, resourcemanager,
-     *     kubernetes-ha-services)
-     * @return Return the Flink Kubernetes client with the specified configuration and dedicated IO
-     *     executor.
-     */
-    public FlinkKubeClient fromConfiguration(Configuration flinkConfig, String useCase) {
+    public FlinkKubeClient fromConfiguration(Configuration flinkConfig) {
+        return fromConfiguration(flinkConfig, createThreadPoolForAsyncIO());
+    }
+
+    public FlinkKubeClient fromConfiguration(Configuration flinkConfig, Executor ioExecutor) {
         final Config config;
 
         final String kubeContext = flinkConfig.getString(KubernetesConfigOptions.CONTEXT);
@@ -94,34 +87,12 @@ public class FlinkKubeClientFactory {
         LOG.debug("Setting namespace of Kubernetes client to {}", namespace);
         config.setNamespace(namespace);
 
-        // This could be removed after we bump the fabric8 Kubernetes client version to 4.13.0+ or
-        // use the a shared connection for all ConfigMap watches. See FLINK-22006 for more
-        // information.
-        trySetMaxConcurrentRequest(config);
-
         final NamespacedKubernetesClient client = new DefaultKubernetesClient(config);
-        final int poolSize =
-                flinkConfig.get(KubernetesConfigOptions.KUBERNETES_CLIENT_IO_EXECUTOR_POOL_SIZE);
-        return new Fabric8FlinkKubeClient(
-                flinkConfig, client, createThreadPoolForAsyncIO(poolSize, useCase));
+
+        return new Fabric8FlinkKubeClient(flinkConfig, client, () -> ioExecutor);
     }
 
-    @VisibleForTesting
-    static void trySetMaxConcurrentRequest(Config config) {
-        final String configuredMaxConcurrentRequests =
-                Utils.getSystemPropertyOrEnvVar(
-                        Config.KUBERNETES_MAX_CONCURRENT_REQUESTS,
-                        String.valueOf(Config.DEFAULT_MAX_CONCURRENT_REQUESTS));
-        if (configuredMaxConcurrentRequests != null) {
-            LOG.debug(
-                    "Setting max concurrent requests of Kubernetes client to {}",
-                    configuredMaxConcurrentRequests);
-            config.setMaxConcurrentRequests(Integer.parseInt(configuredMaxConcurrentRequests));
-        }
-    }
-
-    private static ExecutorService createThreadPoolForAsyncIO(int poolSize, String useCase) {
-        return Executors.newFixedThreadPool(
-                poolSize, new ExecutorThreadFactory("flink-kubeclient-io-for-" + useCase));
+    private static Executor createThreadPoolForAsyncIO() {
+        return Executors.newFixedThreadPool(2, new ExecutorThreadFactory("FlinkKubeClient-IO"));
     }
 }

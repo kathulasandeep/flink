@@ -53,8 +53,6 @@ public class KubernetesLeaderElector {
     @VisibleForTesting
     public static final String LEADER_ANNOTATION_KEY = "control-plane.alpha.kubernetes.io/leader";
 
-    private final Object lock = new Object();
-
     private final ExecutorService executorService =
             Executors.newSingleThreadExecutor(
                     new ExecutorThreadFactory("KubernetesLeaderElector-ExecutorService"));
@@ -94,20 +92,11 @@ public class KubernetesLeaderElector {
     }
 
     public void run() {
-        synchronized (lock) {
-            if (executorService.isShutdown()) {
-                LOG.debug(
-                        "Ignoring KubernetesLeaderElector.run call because the leader elector has already been shut down.");
-            } else {
-                executorService.execute(internalLeaderElector::run);
-            }
-        }
+        executorService.submit(internalLeaderElector::run);
     }
 
     public void stop() {
-        synchronized (lock) {
-            executorService.shutdownNow();
-        }
+        executorService.shutdownNow();
     }
 
     public static boolean hasLeadership(KubernetesConfigMap configMap, String lockIdentity) {

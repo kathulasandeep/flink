@@ -30,7 +30,6 @@ import org.apache.flink.yarn.util.TestHadoopModuleFactory;
 
 import org.apache.flink.shaded.guava18.com.google.common.collect.Lists;
 
-import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.security.AMRMTokenIdentifier;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.ResourceScheduler;
@@ -151,8 +150,8 @@ public class YARNSessionFIFOSecuredITCase extends YARNSessionFIFOITCase {
                                 SecurityOptions.KERBEROS_LOGIN_PRINCIPAL.key(),
                                 SecureTestEnvironment.getHadoopServicePrincipal());
                     }
-                    final ApplicationId applicationId = runDetachedModeTest(securityProperties);
-                    verifyResultContainsKerberosKeytab(applicationId);
+                    runDetachedModeTest(securityProperties);
+                    verifyResultContainsKerberosKeytab();
                 });
     }
 
@@ -172,18 +171,17 @@ public class YARNSessionFIFOSecuredITCase extends YARNSessionFIFOITCase {
                                 SecurityOptions.KERBEROS_LOGIN_PRINCIPAL.key(),
                                 SecureTestEnvironment.getHadoopServicePrincipal());
                     }
-                    final ApplicationId applicationId = runDetachedModeTest(securityProperties);
-                    verifyResultContainsKerberosKeytab(applicationId);
+                    runDetachedModeTest(securityProperties);
+                    verifyResultContainsKerberosKeytab();
                 });
     }
 
-    private static void verifyResultContainsKerberosKeytab(ApplicationId applicationId)
-            throws Exception {
+    private static void verifyResultContainsKerberosKeytab() throws Exception {
         final String[] mustHave = {"Login successful for user", "using keytab file"};
         final boolean jobManagerRunsWithKerberos =
-                verifyStringsInNamedLogFiles(mustHave, applicationId, "jobmanager.log");
+                verifyStringsInNamedLogFiles(mustHave, "jobmanager.log");
         final boolean taskManagerRunsWithKerberos =
-                verifyStringsInNamedLogFiles(mustHave, applicationId, "taskmanager.log");
+                verifyStringsInNamedLogFiles(mustHave, "taskmanager.log");
 
         Assert.assertThat(
                 "The JobManager and the TaskManager should both run with Kerberos.",

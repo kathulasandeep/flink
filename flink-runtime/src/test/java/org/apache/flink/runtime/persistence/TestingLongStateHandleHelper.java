@@ -19,122 +19,72 @@
 package org.apache.flink.runtime.persistence;
 
 import org.apache.flink.runtime.state.RetrievableStateHandle;
-import org.apache.flink.runtime.state.StateObject;
-import org.apache.flink.util.AbstractID;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.StringJoiner;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Testing implementation for {@link RetrievableStateStorageHelper} and {@link
  * RetrievableStateHandle} with type {@link Long}.
  */
-public class TestingLongStateHandleHelper
-        implements RetrievableStateStorageHelper<TestingLongStateHandleHelper.LongStateHandle> {
+public class TestingLongStateHandleHelper implements RetrievableStateStorageHelper<Long> {
 
-    private static final List<LongStateHandle> STATE_STORAGE = new ArrayList<>();
+    private final List<LongRetrievableStateHandle> stateHandles = new ArrayList<>();
 
     @Override
-    public RetrievableStateHandle<LongStateHandle> store(LongStateHandle state) {
-        final int pos = STATE_STORAGE.size();
-        STATE_STORAGE.add(state);
+    public RetrievableStateHandle<Long> store(Long state) {
+        final LongRetrievableStateHandle stateHandle = new LongRetrievableStateHandle(state);
+        stateHandles.add(stateHandle);
 
-        return new LongRetrievableStateHandle(pos);
+        return stateHandle;
     }
 
-    public static LongStateHandle createState(long value) {
-        return new LongStateHandle(value);
+    public List<LongRetrievableStateHandle> getStateHandles() {
+        return stateHandles;
     }
 
-    public static long getStateHandleValueByIndex(int index) {
-        return STATE_STORAGE.get(index).getValue();
-    }
+    /** Testing {@link RetrievableStateStorageHelper} implementation with {@link Long}. */
+    public static class LongRetrievableStateHandle implements RetrievableStateHandle<Long> {
 
-    public static int getDiscardCallCountForStateHandleByIndex(int index) {
-        return STATE_STORAGE.get(index).getNumberOfDiscardCalls();
-    }
+        private static final long serialVersionUID = -3555329254423838912L;
 
-    public static int getGlobalStorageSize() {
-        return STATE_STORAGE.size();
-    }
+        private static AtomicInteger numberOfGlobalDiscardCalls = new AtomicInteger(0);
 
-    public static void clearGlobalState() {
-        STATE_STORAGE.clear();
-    }
-
-    public static int getGlobalDiscardCount() {
-        return STATE_STORAGE.stream().mapToInt(LongStateHandle::getNumberOfDiscardCalls).sum();
-    }
-
-    /**
-     * {@code LongStateHandle} implements {@link StateObject} to monitor the {@link
-     * StateObject#discardState()} calls.
-     */
-    public static class LongStateHandle implements StateObject {
-
-        private static final long serialVersionUID = -5752042587113549855L;
-
-        private final Long value;
+        private final Long state;
 
         private int numberOfDiscardCalls = 0;
 
-        public LongStateHandle(long value) {
-            this.value = value;
+        public LongRetrievableStateHandle(Long state) {
+            this.state = state;
         }
 
-        public long getValue() {
-            return value;
+        @Override
+        public Long retrieveState() {
+            return state;
         }
 
         @Override
         public void discardState() {
+            numberOfGlobalDiscardCalls.incrementAndGet();
             numberOfDiscardCalls++;
+        }
+
+        @Override
+        public long getStateSize() {
+            return 0;
         }
 
         public int getNumberOfDiscardCalls() {
             return numberOfDiscardCalls;
         }
 
-        @Override
-        public long getStateSize() {
-            return 8L;
+        public static int getNumberOfGlobalDiscardCalls() {
+            return numberOfGlobalDiscardCalls.get();
         }
 
-        @Override
-        public String toString() {
-            return new StringJoiner(", ", LongStateHandle.class.getSimpleName() + "[", "]")
-                    .add("value=" + value)
-                    .add("numberOfDiscardCalls=" + numberOfDiscardCalls)
-                    .toString();
-        }
-    }
-
-    /** Testing {@link RetrievableStateStorageHelper} implementation with {@link Long}. */
-    public static class LongRetrievableStateHandle
-            implements RetrievableStateHandle<LongStateHandle> {
-
-        private static final long serialVersionUID = -3555329254423838912L;
-
-        private final int stateReference;
-
-        public LongRetrievableStateHandle(int stateReference) {
-            this.stateReference = stateReference;
-        }
-
-        @Override
-        public LongStateHandle retrieveState() {
-            return STATE_STORAGE.get(stateReference);
-        }
-
-        @Override
-        public void discardState() {
-            STATE_STORAGE.get(stateReference).discardState();
-        }
-
-        @Override
-        public long getStateSize() {
-            return AbstractID.SIZE;
+        public static void clearNumberOfGlobalDiscardCalls() {
+            numberOfGlobalDiscardCalls.set(0);
         }
     }
 }

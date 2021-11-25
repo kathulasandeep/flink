@@ -25,7 +25,6 @@ import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.sink.SinkFunction;
 import org.apache.flink.streaming.connectors.kafka.KafkaTestBase;
 import org.apache.flink.streaming.connectors.kafka.KafkaTestBaseWithFlink;
-import org.apache.flink.streaming.connectors.kafka.KafkaTestEnvironment;
 import org.apache.flink.streaming.connectors.kafka.partitioner.FlinkKafkaPartitioner;
 import org.apache.flink.table.api.EnvironmentSettings;
 import org.apache.flink.table.api.TableResult;
@@ -36,7 +35,6 @@ import org.apache.flink.test.util.SuccessException;
 import org.apache.flink.types.Row;
 
 import org.junit.Before;
-import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
@@ -50,7 +48,6 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Properties;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -90,22 +87,6 @@ public class KafkaTableITCase extends KafkaTestBaseWithFlink {
 
     protected StreamExecutionEnvironment env;
     protected StreamTableEnvironment tEnv;
-
-    @BeforeClass
-    public static void prepare() throws Exception {
-        LOG.info("-------------------------------------------------------------------------");
-        LOG.info("    Starting KafkaTableITCase ");
-        LOG.info("-------------------------------------------------------------------------");
-
-        Properties serverProperties = new Properties();
-        serverProperties.put("log.retention.ms", Integer.toString(-1));
-        startClusters(
-                KafkaTestEnvironment.createConfig()
-                        .setKafkaServersNumber(NUMBER_OF_KAFKA_SERVERS)
-                        .setSecureMode(false)
-                        .setHideKafkaBehindProxy(false)
-                        .setKafkaServerProperties(serverProperties));
-    }
 
     @Before
     public void setup() {

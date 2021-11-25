@@ -21,13 +21,11 @@ import org.apache.flink.metrics.Gauge;
 import org.apache.flink.streaming.api.operators.Output;
 import org.apache.flink.streaming.runtime.metrics.WatermarkGauge;
 
-import java.io.Closeable;
-
 /**
  * An {@link Output} that measures the last emitted watermark with a {@link WatermarkGauge}.
  *
  * @param <T> The type of the elements that can be emitted.
  */
-public interface WatermarkGaugeExposingOutput<T> extends Output<T>, Closeable {
+public interface WatermarkGaugeExposingOutput<T> extends Output<T> {
     Gauge<Long> getWatermarkGauge();
 }

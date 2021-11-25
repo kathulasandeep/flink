@@ -28,7 +28,7 @@ under the License.
 
 	<groupId>org.apache.flink</groupId>
 	<artifactId>flink-parent</artifactId>
-	<version>1.12-SNAPSHOT</version>
+	<version>1.12.2</version>
 
 	<name>Flink : </name>
 	<packaging>pom</packaging>
@@ -123,7 +123,7 @@ under the License.
 		<zookeeper.version>3.4.14</zookeeper.version>
 		<!-- Only the curator2 TestingServer works with ZK 3.4 -->
 		<curator.version>2.12.0</curator.version>
-		<jackson.version>2.12.1</jackson.version>
+		<jackson.version>2.10.1</jackson.version>
 		<prometheus.version>0.8.1</prometheus.version>
 		<avro.version>1.10.0</avro.version>
 		<javax.activation.api.version>1.2.0</javax.activation.api.version>
@@ -136,7 +136,6 @@ under the License.
 		<beam.version>2.23.0</beam.version>
 		<protoc.version>3.11.1</protoc.version>
 		<arrow.version>0.16.0</arrow.version>
-		<testcontainers.version>1.16.0</testcontainers.version>
 		<japicmp.skip>false</japicmp.skip>
 		<flink.convergence.phase>validate</flink.convergence.phase>
 		<!--
@@ -155,7 +154,7 @@ under the License.
 			For Hadoop 2.7, the minor Hadoop version supported for flink-shaded-hadoop-2-uber is 2.7.5
 		-->
 		<hivemetastore.hadoop.version>2.7.5</hivemetastore.hadoop.version>
-		<japicmp.referenceVersion>1.12.5</japicmp.referenceVersion>
+		<japicmp.referenceVersion>1.12.1</japicmp.referenceVersion>
 		<japicmp.outputDir>tools/japicmp-output</japicmp.outputDir>
 		<spotless.version>2.4.2</spotless.version>
 	</properties>
@@ -165,7 +164,7 @@ under the License.
 		<dependency>
 			<groupId>org.apache.flink</groupId>
 			<artifactId>force-shading</artifactId>
-			<version>1.12-SNAPSHOT</version>
+			<version>1.12.2</version>
 		</dependency>
 
 		<!-- Root dependencies for all projects -->
@@ -286,13 +285,13 @@ under the License.
 			<dependency>
 				<groupId>org.apache.flink</groupId>
 				<artifactId>flink-shaded-jackson</artifactId>
-				<version>${jackson.version}-13.0</version>
+				<version>${jackson.version}-${flink.shaded.version}</version>
 			</dependency>
 
 			<dependency>
 				<groupId>org.apache.flink</groupId>
 				<artifactId>flink-shaded-jackson-module-jsonSchema</artifactId>
-				<version>${jackson.version}-13.0</version>
+				<version>${jackson.version}-${flink.shaded.version}</version>
 			</dependency>
 
 			<dependency>
@@ -461,7 +460,7 @@ under the License.
 			<dependency>
 				<groupId>org.xerial.snappy</groupId>
 				<artifactId>snappy-java</artifactId>
-				<version>1.1.8.3</version>
+				<version>1.1.4</version>
 			</dependency>
 
 			<dependency>
@@ -563,7 +562,7 @@ under the License.
 			<dependency>
 				<groupId>commons-io</groupId>
 				<artifactId>commons-io</artifactId>
-				<version>2.8.0</version>
+				<version>2.7</version>
 			</dependency>
 
 			<!-- commons collections needs to be pinned to this critical security fix version -->
@@ -818,13 +817,6 @@ under the License.
 				<groupId>org.yaml</groupId>
 				<artifactId>snakeyaml</artifactId>
 				<version>1.27</version>
-			</dependency>
-			<dependency>
-				<groupId>org.testcontainers</groupId>
-				<artifactId>testcontainers-bom</artifactId>
-				<version>${testcontainers.version}</version>
-				<type>pom</type>
-				<scope>import</scope>
 			</dependency>
 		</dependencies>
 	</dependencyManagement>
@@ -1353,8 +1345,6 @@ under the License.
 				<version>2.4</version><!--$NO-MVN-MAN-VER$-->
 				<configuration>
 					<archive>
-						<!-- Globally exclude maven metadata, because it may accidentally bundle files we don't intend to -->
-						<addMavenDescriptor>false</addMavenDescriptor>
 						<manifest>
 							<addDefaultImplementationEntries>true</addDefaultImplementationEntries>
 							<addDefaultSpecificationEntries>true</addDefaultSpecificationEntries>
@@ -1538,9 +1528,6 @@ under the License.
 						<exclude>flink-python/lib/**</exclude>
 						<exclude>flink-python/dev/download/**</exclude>
 						<exclude>flink-python/docs/_build/**</exclude>
-
-						<!-- AWS SDK config that does not support license headers -->
-						<exclude>**/awssdk/global/handlers/execution.interceptors</exclude>
 					</excludes>
 				</configuration>
 			</plugin>
@@ -1710,50 +1697,6 @@ under the License.
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-shade-plugin</artifactId>
-				<configuration>
-					<!-- This section contains the core configuration that is applied to every jar that we create.-->
-					<filters combine.children="append">
-						<filter>
-							<artifact>*</artifact>
-							<excludes>
-								<!-- Globally exclude log4j.properties from our JAR files. -->
-								<exclude>log4j.properties</exclude>
-								<exclude>log4j2.properties</exclude>
-								<exclude>log4j-test.properties</exclude>
-								<exclude>log4j2-test.properties</exclude>
-								<!-- Do not copy the signatures in the META-INF folder.
-								Otherwise, this might cause SecurityExceptions when using the JAR. -->
-								<exclude>META-INF/*.SF</exclude>
-								<exclude>META-INF/*.DSA</exclude>
-								<exclude>META-INF/*.RSA</exclude>
-								<!-- META-INF/maven can contain 2 things:
-									- For archetypes, it contains an archetype-metadata.xml.
-									- For other jars, it contains the pom for all dependencies under the respective <groupId>/<artifactId>/ directory.
-
-								 	We want to exclude the poms because they may be under an incompatible license,
-								 	however the archetype metadata is required and we need to keep that around.
-
-								 	This pattern excludes directories under META-INF/maven.
-								 	('?*/**' does not work because '**' also matches zero directories;
-								 	everything that matches '?*' also matches '?*/**')
-
-									The initial '**' allows the pattern to also work for multi-release jars that may contain such entries under
-									'META-INF/versions/11/META-INF/maven/'.
-								 	-->
-								<exclude>**/META-INF/maven/?*/?*/**</exclude>
-							</excludes>
-						</filter>
-					</filters>
-					<transformers combine.children="append">
-						<!-- The service transformer is needed to merge META-INF/services files -->
-						<transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
-						<!-- The ApacheNoticeResourceTransformer collects and aggregates NOTICE files -->
-						<transformer implementation="org.apache.maven.plugins.shade.resource.ApacheNoticeResourceTransformer">
-							<projectName>Apache Flink</projectName>
-							<encoding>UTF-8</encoding>
-						</transformer>
-					</transformers>
-				</configuration>
 				<executions>
 					<execution>
 						<id>shade-flink</id>
@@ -1768,6 +1711,16 @@ under the License.
 							<dependencyReducedPomLocation>${project.basedir}/target/dependency-reduced-pom.xml</dependencyReducedPomLocation>
 							<!-- Filters MUST be appended; merging filters does not work properly, see MSHADE-305 -->
 							<filters combine.children="append">
+								<!-- Globally exclude log4j.properties from our JAR files. -->
+								<filter>
+									<artifact>*</artifact>
+									<excludes>
+										<exclude>log4j.properties</exclude>
+										<exclude>log4j2.properties</exclude>
+										<exclude>log4j-test.properties</exclude>
+										<exclude>log4j2-test.properties</exclude>
+									</excludes>
+								</filter>
 								<!-- drop entries into META-INF and NOTICE files for the dummy artifact -->
 								<filter>
 									<artifact>org.apache.flink:force-shading</artifact>
@@ -1794,6 +1747,15 @@ under the License.
 									<include>org.apache.flink:force-shading</include>
 								</includes>
 							</artifactSet>
+							<transformers combine.children="append">
+								<!-- The service transformer is needed to merge META-INF/services files -->
+								<transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+								<!-- The ApacheNoticeResourceTransformer collects and aggregates NOTICE files -->
+								<transformer implementation="org.apache.maven.plugins.shade.resource.ApacheNoticeResourceTransformer">
+									<projectName>Apache Flink</projectName>
+									<encoding>UTF-8</encoding>
+								</transformer>
+							</transformers>
 						</configuration>
 					</execution>
 				</executions>

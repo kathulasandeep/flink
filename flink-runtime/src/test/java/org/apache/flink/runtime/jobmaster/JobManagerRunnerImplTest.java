@@ -57,7 +57,6 @@ import java.util.concurrent.TimeoutException;
 
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.fail;
 
@@ -170,16 +169,17 @@ public class JobManagerRunnerImplTest extends TestLogger {
 
             jobManagerRunner.closeAsync();
 
-            assertJobNotFinished(resultFuture);
+            try {
+                resultFuture.get();
+                fail("Should have failed.");
+            } catch (ExecutionException ee) {
+                assertThat(
+                        ExceptionUtils.stripExecutionException(ee),
+                        instanceOf(JobNotFinishedException.class));
+            }
         } finally {
             jobManagerRunner.close();
         }
-    }
-
-    private void assertJobNotFinished(CompletableFuture<ArchivedExecutionGraph> resultFuture)
-            throws ExecutionException, InterruptedException {
-        final ArchivedExecutionGraph graph = resultFuture.get();
-        assertEquals(graph.getState(), JobStatus.SUSPENDED);
     }
 
     @Test

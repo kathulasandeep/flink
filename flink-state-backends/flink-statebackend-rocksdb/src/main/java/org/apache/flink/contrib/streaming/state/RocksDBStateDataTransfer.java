@@ -17,8 +17,6 @@
 
 package org.apache.flink.contrib.streaming.state;
 
-import org.apache.flink.runtime.util.ExecutorThreadFactory;
-
 import java.io.Closeable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -32,9 +30,7 @@ class RocksDBStateDataTransfer implements Closeable {
 
     RocksDBStateDataTransfer(int threadNum) {
         if (threadNum > 1) {
-            executorService =
-                    Executors.newFixedThreadPool(
-                            threadNum, new ExecutorThreadFactory("Flink-RocksDBStateDataTransfer"));
+            executorService = Executors.newFixedThreadPool(threadNum);
         } else {
             executorService = newDirectExecutorService();
         }

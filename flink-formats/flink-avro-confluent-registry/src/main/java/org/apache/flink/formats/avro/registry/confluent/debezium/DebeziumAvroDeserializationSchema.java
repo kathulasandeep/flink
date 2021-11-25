@@ -34,10 +34,7 @@ import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.types.RowKind;
 import org.apache.flink.util.Collector;
 
-import javax.annotation.Nullable;
-
 import java.io.IOException;
-import java.util.Map;
 import java.util.Objects;
 
 import static java.lang.String.format;
@@ -78,14 +75,6 @@ public final class DebeziumAvroDeserializationSchema implements DeserializationS
 
     public DebeziumAvroDeserializationSchema(
             RowType rowType, TypeInformation<RowData> producedTypeInfo, String schemaRegistryUrl) {
-        this(rowType, producedTypeInfo, schemaRegistryUrl, null);
-    }
-
-    public DebeziumAvroDeserializationSchema(
-            RowType rowType,
-            TypeInformation<RowData> producedTypeInfo,
-            String schemaRegistryUrl,
-            @Nullable Map<String, ?> registryConfigs) {
         this.producedTypeInfo = producedTypeInfo;
         RowType debeziumAvroRowType = createDebeziumAvroRowType(fromLogicalToDataType(rowType));
 
@@ -93,8 +82,7 @@ public final class DebeziumAvroDeserializationSchema implements DeserializationS
                 new AvroRowDataDeserializationSchema(
                         ConfluentRegistryAvroDeserializationSchema.forGeneric(
                                 AvroSchemaConverter.convertToSchema(debeziumAvroRowType),
-                                schemaRegistryUrl,
-                                registryConfigs),
+                                schemaRegistryUrl),
                         AvroToRowDataConverters.createRowConverter(debeziumAvroRowType),
                         producedTypeInfo);
     }

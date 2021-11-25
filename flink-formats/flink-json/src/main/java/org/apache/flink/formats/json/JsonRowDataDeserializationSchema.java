@@ -30,8 +30,6 @@ import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.Deseriali
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.JsonNode;
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.ObjectMapper;
 
-import javax.annotation.Nullable;
-
 import java.io.IOException;
 import java.util.Objects;
 
@@ -95,10 +93,7 @@ public class JsonRowDataDeserializationSchema implements DeserializationSchema<R
     }
 
     @Override
-    public RowData deserialize(@Nullable byte[] message) throws IOException {
-        if (message == null) {
-            return null;
-        }
+    public RowData deserialize(byte[] message) throws IOException {
         try {
             final JsonNode root = objectMapper.readTree(message);
             return (RowData) runtimeConverter.convert(root);

@@ -157,7 +157,7 @@ public class ProcessFailureCancelingITCase extends TestLogger {
                             rpcService,
                             haServices,
                             blobServerResource.getBlobServer(),
-                            new HeartbeatServices(100L, 10000L),
+                            new HeartbeatServices(100L, 1000L),
                             NoOpMetricRegistry.INSTANCE,
                             new MemoryArchivedExecutionGraphStore(),
                             VoidMetricQueryServiceRetriever.INSTANCE,
@@ -257,7 +257,7 @@ public class ProcessFailureCancelingITCase extends TestLogger {
                 clusterClient.close();
             }
             if (dispatcherResourceManagerComponent != null) {
-                dispatcherResourceManagerComponent.stopApplication(
+                dispatcherResourceManagerComponent.deregisterApplicationAndClose(
                         ApplicationStatus.SUCCEEDED, null);
             }
 

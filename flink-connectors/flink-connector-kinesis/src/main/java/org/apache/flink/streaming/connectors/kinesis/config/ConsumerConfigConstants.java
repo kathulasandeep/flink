@@ -217,10 +217,6 @@ public class ConsumerConfigConstants extends AWSConfigConstants {
     public static final String SUBSCRIBE_TO_SHARD_RETRIES =
             "flink.shard.subscribetoshard.maxretries";
 
-    /** A timeout when waiting for a shard subscription to be established. */
-    public static final String SUBSCRIBE_TO_SHARD_TIMEOUT_SECONDS =
-            "flink.shard.subscribetoshard.timeout";
-
     /** The base backoff time between each subscribeToShard attempt. */
     public static final String SUBSCRIBE_TO_SHARD_BACKOFF_BASE =
             "flink.shard.subscribetoshard.backoff.base";
@@ -312,9 +308,6 @@ public class ConsumerConfigConstants extends AWSConfigConstants {
     public static final String EFO_HTTP_CLIENT_MAX_CONCURRENCY =
             "flink.stream.efo.http-client.max-concurrency";
 
-    public static final String EFO_HTTP_CLIENT_READ_TIMEOUT_MILLIS =
-            "flink.stream.efo.http-client.read-timeout";
-
     // ------------------------------------------------------------------------
     //  Default values for consumer configuration
     // ------------------------------------------------------------------------
@@ -370,8 +363,6 @@ public class ConsumerConfigConstants extends AWSConfigConstants {
 
     public static final int DEFAULT_SUBSCRIBE_TO_SHARD_RETRIES = 10;
 
-    public static final Duration DEFAULT_SUBSCRIBE_TO_SHARD_TIMEOUT = Duration.ofSeconds(60);
-
     public static final long DEFAULT_SUBSCRIBE_TO_SHARD_BACKOFF_BASE = 1000L;
 
     public static final long DEFAULT_SUBSCRIBE_TO_SHARD_BACKOFF_MAX = 2000L;
@@ -406,9 +397,7 @@ public class ConsumerConfigConstants extends AWSConfigConstants {
 
     public static final long DEFAULT_WATERMARK_SYNC_MILLIS = 30_000;
 
-    public static final int DEFAULT_EFO_HTTP_CLIENT_MAX_CONCURRENCY = 10_000;
-
-    public static final Duration DEFAULT_EFO_HTTP_CLIENT_READ_TIMEOUT = Duration.ofMinutes(6);
+    public static final int DEFAULT_EFO_HTTP_CLIENT_MAX_CONURRENCY = 10_000;
 
     /**
      * To avoid shard iterator expires in {@link ShardConsumer}s, the value for the configured

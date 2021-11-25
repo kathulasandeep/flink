@@ -43,12 +43,12 @@ public class BroadcastPartitioner<T> extends StreamPartitioner<T> {
 
     @Override
     public SubtaskStateMapper getUpstreamSubtaskStateMapper() {
-        return SubtaskStateMapper.UNSUPPORTED;
+        return SubtaskStateMapper.DISCARD_EXTRA_STATE;
     }
 
     @Override
     public SubtaskStateMapper getDownstreamSubtaskStateMapper() {
-        return SubtaskStateMapper.UNSUPPORTED;
+        return SubtaskStateMapper.ROUND_ROBIN;
     }
 
     @Override

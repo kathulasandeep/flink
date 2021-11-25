@@ -216,9 +216,7 @@ public class MiniCluster implements AutoCloseableAsync {
                                         .getNumTaskManagers()); // common + JM + RM + TMs
         this.dispatcherResourceManagerComponents = new ArrayList<>(1);
 
-        // There shouldn't be any lost messages between the MiniCluster and the Flink components
-        // since they all run in the same process.
-        this.rpcTimeout = RpcUtils.INF_TIMEOUT;
+        this.rpcTimeout = miniClusterConfiguration.getRpcTimeout();
         this.terminationFuture = CompletableFuture.completedFuture(null);
         running = false;
 

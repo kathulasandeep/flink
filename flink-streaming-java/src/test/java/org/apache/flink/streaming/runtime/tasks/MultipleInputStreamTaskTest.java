@@ -90,7 +90,6 @@ import static org.apache.flink.util.Preconditions.checkArgument;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsInAnyOrder;
-import static org.hamcrest.Matchers.not;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -511,7 +510,20 @@ public class MultipleInputStreamTaskTest {
     @Test
     public void testWatermark() throws Exception {
         try (StreamTaskMailboxTestHarness<String> testHarness =
-                buildWatermarkTestHarness(2, false)) {
+                new StreamTaskMailboxTestHarnessBuilder<>(
+                                MultipleInputStreamTask::new, BasicTypeInfo.STRING_TYPE_INFO)
+                        .modifyExecutionConfig(config -> config.enableObjectReuse())
+                        .addInput(BasicTypeInfo.STRING_TYPE_INFO, 2)
+                        .addSourceInput(
+                                new SourceOperatorFactory<>(
+                                        new MockSource(
+                                                Boundedness.CONTINUOUS_UNBOUNDED, 2, true, false),
+                                        WatermarkStrategy.forGenerator(
+                                                ctx -> new RecordToWatermarkGenerator())))
+                        .addInput(BasicTypeInfo.DOUBLE_TYPE_INFO, 2)
+                        .setupOutputForSingletonOperatorChain(
+                                new MapToStringMultipleInputOperatorFactory(3))
+                        .build()) {
             ArrayDeque<Object> expectedOutput = new ArrayDeque<>();
 
             int initialTime = 0;
@@ -588,7 +600,20 @@ public class MultipleInputStreamTaskTest {
     @Test
     public void testWatermarkAndStreamStatusForwarding() throws Exception {
         try (StreamTaskMailboxTestHarness<String> testHarness =
-                buildWatermarkTestHarness(2, true)) {
+                new StreamTaskMailboxTestHarnessBuilder<>(
+                                MultipleInputStreamTask::new, BasicTypeInfo.STRING_TYPE_INFO)
+                        .modifyExecutionConfig(config -> config.enableObjectReuse())
+                        .addInput(BasicTypeInfo.STRING_TYPE_INFO, 2)
+                        .addSourceInput(
+                                new SourceOperatorFactory<>(
+                                        new MockSource(
+                                                Boundedness.CONTINUOUS_UNBOUNDED, 2, true, true),
+                                        WatermarkStrategy.forGenerator(
+                                                ctx -> new RecordToWatermarkGenerator())))
+                        .addInput(BasicTypeInfo.DOUBLE_TYPE_INFO, 2)
+                        .setupOutputForSingletonOperatorChain(
+                                new MapToStringMultipleInputOperatorFactory(3))
+                        .build()) {
             ArrayDeque<Object> expectedOutput = new ArrayDeque<>();
 
             int initialTime = 0;
@@ -648,24 +673,6 @@ public class MultipleInputStreamTaskTest {
             testHarness.processElement(StreamStatus.ACTIVE, 0, 1);
             expectedOutput.add(StreamStatus.ACTIVE);
             assertThat(testHarness.getOutput(), contains(expectedOutput.toArray()));
-        }
-    }
-
-    @Test
-    public void testAdvanceToEndOfEventTime() throws Exception {
-        try (StreamTaskMailboxTestHarness<String> testHarness =
-                buildWatermarkTestHarness(2, false)) {
-            testHarness.processElement(Watermark.MAX_WATERMARK, 0, 0);
-            testHarness.processElement(Watermark.MAX_WATERMARK, 0, 1);
-
-            testHarness.getStreamTask().advanceToEndOfEventTime();
-
-            testHarness.processElement(Watermark.MAX_WATERMARK, 1, 0);
-
-            assertThat(testHarness.getOutput(), not(contains(Watermark.MAX_WATERMARK)));
-
-            testHarness.processElement(Watermark.MAX_WATERMARK, 1, 1);
-            assertThat(testHarness.getOutput(), contains(Watermark.MAX_WATERMARK));
         }
     }
 
@@ -1017,27 +1024,6 @@ public class MultipleInputStreamTaskTest {
         testHarness
                 .getStreamTask()
                 .dispatchOperatorEvent(sourceOperatorID, new SerializedValue<>(addSplitEvent));
-    }
-
-    private static StreamTaskMailboxTestHarness<String> buildWatermarkTestHarness(
-            int inputChannels, boolean readerMarkIdleOnNoSplits) throws Exception {
-        return new StreamTaskMailboxTestHarnessBuilder<>(
-                        MultipleInputStreamTask::new, BasicTypeInfo.STRING_TYPE_INFO)
-                .modifyExecutionConfig(config -> config.enableObjectReuse())
-                .addInput(BasicTypeInfo.STRING_TYPE_INFO, inputChannels)
-                .addSourceInput(
-                        new SourceOperatorFactory<>(
-                                new MockSource(
-                                        Boundedness.CONTINUOUS_UNBOUNDED,
-                                        2,
-                                        true,
-                                        readerMarkIdleOnNoSplits),
-                                WatermarkStrategy.forGenerator(
-                                        ctx -> new RecordToWatermarkGenerator())))
-                .addInput(BasicTypeInfo.DOUBLE_TYPE_INFO, inputChannels)
-                .setupOutputForSingletonOperatorChain(
-                        new MapToStringMultipleInputOperatorFactory(3))
-                .build();
     }
 
     private static OperatorID getSourceOperatorID(

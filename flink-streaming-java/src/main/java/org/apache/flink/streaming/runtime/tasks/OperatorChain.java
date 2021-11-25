@@ -56,14 +56,11 @@ import org.apache.flink.util.FlinkException;
 import org.apache.flink.util.OutputTag;
 import org.apache.flink.util.SerializedValue;
 
-import org.apache.flink.shaded.guava18.com.google.common.io.Closer;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
 
-import java.io.Closeable;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -91,7 +88,7 @@ import static org.apache.flink.util.Preconditions.checkState;
  */
 @Internal
 public class OperatorChain<OUT, OP extends StreamOperator<OUT>>
-        implements StreamStatusMaintainer, BoundedMultiInput, Closeable {
+        implements StreamStatusMaintainer, BoundedMultiInput {
 
     private static final Logger LOG = LoggerFactory.getLogger(OperatorChain.class);
 
@@ -131,8 +128,6 @@ public class OperatorChain<OUT, OP extends StreamOperator<OUT>>
      * not forwarded if this value is {@link StreamStatus#IDLE}.
      */
     private StreamStatus streamStatus = StreamStatus.ACTIVE;
-
-    private final Closer closer = Closer.create();
 
     public OperatorChain(
             StreamTask<OUT, OP> containingTask,
@@ -359,7 +354,7 @@ public class OperatorChain<OUT, OP extends StreamOperator<OUT>>
          * Chained sources are closed when {@link
          * org.apache.flink.streaming.runtime.io.StreamTaskSourceInput} are being closed.
          */
-        return closer.register(new ChainingOutput(input, metricGroup, this, outputTag));
+        return new ChainingOutput<>(input, metricGroup, this, outputTag, null);
     }
 
     @Override
@@ -480,12 +475,6 @@ public class OperatorChain<OUT, OP extends StreamOperator<OUT>>
         return chainedSources.get(sourceInput).getSourceOutput();
     }
 
-    public List<Output<StreamRecord<?>>> getChainedSourceOutputs() {
-        return chainedSources.values().stream()
-                .map(ChainedSource::getSourceOutput)
-                .collect(Collectors.toList());
-    }
-
     public StreamTaskSourceInput<?> getSourceTaskInput(SourceInputConfig sourceInput) {
         checkArgument(
                 chainedSources.containsKey(sourceInput),
@@ -519,8 +508,10 @@ public class OperatorChain<OUT, OP extends StreamOperator<OUT>>
      *
      * <p>This method should never fail.
      */
-    public void close() throws IOException {
-        closer.close();
+    public void releaseOutputs() {
+        for (RecordWriterOutput<?> streamOutput : streamOutputs) {
+            streamOutput.close();
+        }
     }
 
     @Nullable
@@ -584,9 +575,9 @@ public class OperatorChain<OUT, OP extends StreamOperator<OUT>>
             // If the chaining output does not copy we need to copy in the broadcast output,
             // otherwise multi-chaining would not work correctly.
             if (containingTask.getExecutionConfig().isObjectReuseEnabled()) {
-                return closer.register(new CopyingBroadcastingOutputCollector<>(asArray, this));
+                return new CopyingBroadcastingOutputCollector<>(asArray, this);
             } else {
-                return closer.register(new BroadcastingOutputCollector<>(asArray, this));
+                return new BroadcastingOutputCollector<>(asArray, this);
             }
         }
     }
@@ -690,7 +681,7 @@ public class OperatorChain<OUT, OP extends StreamOperator<OUT>>
                         MetricNames.IO_CURRENT_INPUT_WATERMARK,
                         currentOperatorOutput.getWatermarkGauge()::getValue);
 
-        return closer.register(currentOperatorOutput);
+        return currentOperatorOutput;
     }
 
     private RecordWriterOutput<OUT> createStreamOutput(
@@ -700,7 +691,7 @@ public class OperatorChain<OUT, OP extends StreamOperator<OUT>>
             Environment taskEnvironment) {
         OutputTag sideOutputTag = edge.getOutputTag(); // OutputTag, return null if not sideOutput
 
-        TypeSerializer outSerializer;
+        TypeSerializer outSerializer = null;
 
         if (edge.getOutputTag() != null) {
             // side output
@@ -715,13 +706,7 @@ public class OperatorChain<OUT, OP extends StreamOperator<OUT>>
                             taskEnvironment.getUserCodeClassLoader().asClassLoader());
         }
 
-        return closer.register(
-                new RecordWriterOutput<OUT>(
-                        recordWriter,
-                        outSerializer,
-                        sideOutputTag,
-                        this,
-                        edge.supportsUnalignedCheckpoints()));
+        return new RecordWriterOutput<>(recordWriter, outSerializer, sideOutputTag, this);
     }
 
     /**

@@ -24,7 +24,6 @@ import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.table.HiveVersionTestUtil;
-import org.apache.flink.table.api.EnvironmentSettings;
 import org.apache.flink.table.api.SqlDialect;
 import org.apache.flink.table.api.Table;
 import org.apache.flink.table.api.TableEnvironment;
@@ -522,51 +521,7 @@ public class HiveTableSourceITCase extends BatchAbstractTestBase {
                                 .get(0);
         Transformation<?> transformation =
                 (execNode.translateToPlan(planner).getInputs().get(0)).getInputs().get(0);
-        // when there's no infer, should use the default parallelism configured
-        Assert.assertEquals(2, transformation.getParallelism());
-    }
-
-    @Test
-    public void testParallelismWithoutParallelismInfer() throws Exception {
-        final String dbName = "source_db";
-        final String tblName = "test_parallelism_no_infer";
-        EnvironmentSettings settings =
-                EnvironmentSettings.newInstance().useBlinkPlanner().inBatchMode().build();
-        TableEnvironment tEnv = TableEnvironment.create(settings);
-        tEnv.getConfig().setSqlDialect(SqlDialect.HIVE);
-        tEnv.registerCatalog("hive", hiveCatalog);
-        tEnv.useCatalog("hive");
-        tEnv.getConfig()
-                .getConfiguration()
-                .setBoolean(HiveOptions.TABLE_EXEC_HIVE_INFER_SOURCE_PARALLELISM, false);
-        tEnv.executeSql(
-                "CREATE TABLE source_db.test_parallelism_no_infer "
-                        + "(`year` STRING, `value` INT) partitioned by (pt int)");
-        HiveTestUtils.createTextTableInserter(hiveCatalog, dbName, tblName)
-                .addRow(new Object[] {"2014", 3})
-                .addRow(new Object[] {"2014", 4})
-                .commit("pt=0");
-        HiveTestUtils.createTextTableInserter(hiveCatalog, dbName, tblName)
-                .addRow(new Object[] {"2015", 2})
-                .addRow(new Object[] {"2015", 5})
-                .commit("pt=1");
-        Table table =
-                tEnv.sqlQuery("select * from hive.source_db.test_parallelism_no_infer limit 1");
-        PlannerBase planner = (PlannerBase) ((TableEnvironmentImpl) tEnv).getPlanner();
-        RelNode relNode = planner.optimize(TableTestUtil.toRelNode(table));
-        @SuppressWarnings("unchecked")
-        ExecNode<PlannerBase, ?> execNode =
-                (ExecNode<PlannerBase, ?>)
-                        planner.translateToExecNodePlan(toScala(Collections.singletonList(relNode)))
-                                .get(0);
-        Transformation<?> transformation =
-                (execNode.translateToPlan(planner).getInputs().get(0)).getInputs().get(0);
-        // when there's no infer, should use the default parallelism
-        Assert.assertEquals(
-                ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM
-                        .defaultValue()
-                        .intValue(),
-                transformation.getParallelism());
+        Assert.assertEquals(1, transformation.getParallelism());
     }
 
     @Test
@@ -883,60 +838,6 @@ public class HiveTableSourceITCase extends BatchAbstractTestBase {
                         format, folderURI));
         Assert.assertEquals(
                 Row.of(1, 2), tEnv.executeSql("select * from parquet_t").collect().next());
-    }
-
-    @Test(timeout = 120000)
-    public void testStreamReadWithProjectPushDown() throws Exception {
-        final String catalogName = "hive";
-        final String dbName = "source_db";
-        final String tblName = "stream_project_pushdown_test";
-        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        env.enableCheckpointing(100);
-        StreamTableEnvironment tEnv =
-                HiveTestUtils.createTableEnvWithBlinkPlannerStreamMode(env, SqlDialect.HIVE);
-        tEnv.registerCatalog(catalogName, hiveCatalog);
-        tEnv.useCatalog(catalogName);
-        tEnv.executeSql(
-                "CREATE TABLE source_db.stream_project_pushdown_test (x int, y string, z int)"
-                        + " PARTITIONED BY ("
-                        + " pt_year int, pt_mon string, pt_day string) TBLPROPERTIES("
-                        + "'streaming-source.enable'='true',"
-                        + "'streaming-source.monitor-interval'='1s',"
-                        + "'streaming-source.consume-start-offset'='pt_year=2019/pt_month=09/pt_day=02'"
-                        + ")");
-
-        HiveTestUtils.createTextTableInserter(hiveCatalog, dbName, tblName)
-                .addRow(new Object[] {0, "a", 11})
-                .commit("pt_year='2019',pt_mon='09',pt_day='01'");
-        HiveTestUtils.createTextTableInserter(hiveCatalog, dbName, tblName)
-                .addRow(new Object[] {1, "b", 12})
-                .commit("pt_year='2020',pt_mon='09',pt_day='03'");
-
-        TableResult result =
-                tEnv.executeSql(
-                        "select x, y from hive.source_db.stream_project_pushdown_test where pt_year = '2020'");
-        CloseableIterator<Row> iter = result.collect();
-
-        Assert.assertEquals(Row.of(1, "b").toString(), fetchRows(iter, 1).get(0));
-
-        for (int i = 2; i < 6; i++) {
-            try {
-                Thread.sleep(1_000);
-            } catch (InterruptedException e) {
-                throw new RuntimeException(e);
-            }
-            HiveTestUtils.createTextTableInserter(hiveCatalog, dbName, tblName)
-                    .addRow(new Object[] {i, "new_add", 11 + i})
-                    .addRow(new Object[] {i, "new_add_1", 11 + i})
-                    .commit("pt_year='2020',pt_mon='10',pt_day='0" + i + "'");
-
-            Assert.assertEquals(
-                    Arrays.asList(
-                            Row.of(i, "new_add").toString(), Row.of(i, "new_add_1").toString()),
-                    fetchRows(iter, 2));
-        }
-
-        result.getJobClient().get().cancel();
     }
 
     private static TableEnvironment createTableEnv() {

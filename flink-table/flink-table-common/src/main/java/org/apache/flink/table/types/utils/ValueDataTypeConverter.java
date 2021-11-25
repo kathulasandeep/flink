@@ -119,14 +119,8 @@ public final class ValueDataTypeConverter {
     }
 
     private static DataType convertToDecimalType(BigDecimal decimal) {
-        final int precision = decimal.precision();
-        final int scale = decimal.scale();
         // let underlying layers check if precision and scale are supported
-        if (scale < 0) {
-            // negative scale is not supported, normalize it
-            return DataTypes.DECIMAL(precision - scale, 0);
-        }
-        return DataTypes.DECIMAL(precision, scale);
+        return DataTypes.DECIMAL(decimal.precision(), decimal.scale());
     }
 
     private static DataType convertToTimeType(java.time.LocalTime time) {

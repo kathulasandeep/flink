@@ -59,7 +59,6 @@ import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 
 import static org.apache.flink.runtime.io.network.buffer.BufferBuilderTestUtils.buildSomeBuffer;
-import static org.apache.flink.runtime.state.CheckpointStorageLocationReference.getDefault;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -261,7 +260,9 @@ public class CheckpointedInputGateTest {
 
     private static CheckpointBarrier barrier(long barrierId) {
         return new CheckpointBarrier(
-                barrierId, barrierId, CheckpointOptions.unaligned(getDefault()));
+                barrierId,
+                barrierId,
+                CheckpointOptions.forCheckpointWithDefaultLocation(true, true, 0));
     }
 
     private void assertAddedInputSize(

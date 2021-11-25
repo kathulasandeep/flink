@@ -150,14 +150,13 @@ public class CheckpointCoordinatorTest extends TestLogger {
         // will use a different thread to allow checkpoint triggering before exiting from
         // receiveAcknowledgeMessage
         ScheduledExecutorService executorService = Executors.newSingleThreadScheduledExecutor();
-        CheckpointCoordinator coordinator = null;
         try {
             int pause = 1000;
             JobID jobId = new JobID();
             ExecutionAttemptID attemptId = new ExecutionAttemptID();
             ExecutionVertex vertex = mockExecutionVertex(attemptId);
 
-            coordinator =
+            CheckpointCoordinator coordinator =
                     new CheckpointCoordinatorBuilder()
                             .setTimer(new ScheduledExecutorServiceAdapter(executorService))
                             .setCheckpointCoordinatorConfiguration(
@@ -187,14 +186,9 @@ public class CheckpointCoordinatorTest extends TestLogger {
                     new AcknowledgeCheckpoint(jobId, attemptId, 1L), TASK_MANAGER_LOCATION_INFO);
             Thread.sleep(pause / 2);
             assertEquals(0, coordinator.getNumberOfPendingCheckpoints());
-            // make sure that the 2nd request is eventually processed
-            while (coordinator.getNumberOfPendingCheckpoints() == 0) {
-                Thread.sleep(1);
-            }
+            Thread.sleep(pause);
+            assertEquals(1, coordinator.getNumberOfPendingCheckpoints());
         } finally {
-            if (coordinator != null) {
-                coordinator.shutdown(JobStatus.FINISHED);
-            }
             executorService.shutdownNow();
         }
     }
@@ -3124,26 +3118,6 @@ public class CheckpointCoordinatorTest extends TestLogger {
     }
 
     @Test
-    public void testResetCalledInRegionRecovery() throws Exception {
-        final JobID jobId = new JobID();
-
-        // set up the coordinator
-        CheckpointCoordinator checkpointCoordinator =
-                new CheckpointCoordinatorBuilder()
-                        .setJobId(jobId)
-                        .setTimer(manuallyTriggeredScheduledExecutor)
-                        .build();
-
-        TestResetHook hook = new TestResetHook("id");
-
-        // Add a master hook
-        checkpointCoordinator.addMasterHook(hook);
-        assertFalse(hook.resetCalled);
-        checkpointCoordinator.restoreLatestCheckpointedStateToSubtasks(Collections.emptySet());
-        assertTrue(hook.resetCalled);
-    }
-
-    @Test
     public void testNotifyCheckpointAbortionInOperatorCoordinator() throws Exception {
         JobID jobId = new JobID();
         final ExecutionAttemptID attemptID = new ExecutionAttemptID();
@@ -3402,44 +3376,6 @@ public class CheckpointCoordinatorTest extends TestLogger {
 
         public int getInvokeCounter() {
             return invokeCounter;
-        }
-    }
-
-    private static class TestResetHook implements MasterTriggerRestoreHook<String> {
-
-        private final String id;
-        boolean resetCalled;
-
-        TestResetHook(String id) {
-            this.id = id;
-            this.resetCalled = false;
-        }
-
-        @Override
-        public String getIdentifier() {
-            return id;
-        }
-
-        @Override
-        public void reset() throws Exception {
-            resetCalled = true;
-        }
-
-        @Override
-        public CompletableFuture<String> triggerCheckpoint(
-                long checkpointId, long timestamp, Executor executor) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void restoreCheckpoint(long checkpointId, @Nullable String checkpointData)
-                throws Exception {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public SimpleVersionedSerializer<String> createCheckpointDataSerializer() {
-            throw new UnsupportedOperationException();
         }
     }
 }

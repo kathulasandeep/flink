@@ -21,11 +21,9 @@ package org.apache.flink.streaming.runtime.tasks;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.runtime.checkpoint.CheckpointMetaData;
 import org.apache.flink.runtime.checkpoint.CheckpointOptions;
-import org.apache.flink.runtime.checkpoint.CheckpointType;
 import org.apache.flink.runtime.execution.CancelTaskException;
 import org.apache.flink.runtime.execution.Environment;
 import org.apache.flink.runtime.metrics.MetricNames;
-import org.apache.flink.runtime.state.CheckpointStorageLocationReference;
 import org.apache.flink.runtime.util.FatalExitExceptionHandler;
 import org.apache.flink.streaming.api.checkpoint.ExternallyInducedSource;
 import org.apache.flink.streaming.api.functions.source.SourceFunction;
@@ -102,16 +100,14 @@ public class SourceStreamTask<
                             // TODO -   message from the master, and the source's trigger
                             // notification
                             final CheckpointOptions checkpointOptions =
-                                    CheckpointOptions.forConfig(
-                                            CheckpointType.CHECKPOINT,
-                                            CheckpointStorageLocationReference.getDefault(),
+                                    CheckpointOptions.forCheckpointWithDefaultLocation(
                                             configuration.isExactlyOnceCheckpointMode(),
                                             configuration.isUnalignedCheckpointsEnabled(),
                                             configuration.getAlignmentTimeout());
                             final long timestamp = System.currentTimeMillis();
 
                             final CheckpointMetaData checkpointMetaData =
-                                    new CheckpointMetaData(checkpointId, timestamp, timestamp);
+                                    new CheckpointMetaData(checkpointId, timestamp);
 
                             try {
                                 SourceStreamTask.super

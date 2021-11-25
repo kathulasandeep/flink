@@ -24,10 +24,8 @@ import org.apache.flink.api.common.accumulators.SerializedListAccumulator;
 import org.apache.flink.api.common.typeutils.base.array.BytePrimitiveArraySerializer;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.core.execution.JobClient;
-import org.apache.flink.runtime.dispatcher.UnavailableDispatcherOperationException;
 import org.apache.flink.runtime.jobgraph.OperatorID;
 import org.apache.flink.runtime.operators.coordination.CoordinationRequestGateway;
-import org.apache.flink.util.ExceptionUtils;
 import org.apache.flink.util.Preconditions;
 
 import org.slf4j.Logger;
@@ -127,13 +125,7 @@ public class CollectResultFetcher<T> {
                 try {
                     response = sendRequest(buffer.getVersion(), requestOffset);
                 } catch (Exception e) {
-                    if (ExceptionUtils.findThrowable(
-                                    e, UnavailableDispatcherOperationException.class)
-                            .isPresent()) {
-                        LOG.debug("The job execution has not started yet; cannot fetch results.");
-                    } else {
-                        LOG.warn("An exception occurred when fetching query results", e);
-                    }
+                    LOG.warn("An exception occurs when fetching query results", e);
                     continue;
                 }
                 // the response will contain data (if any) starting exactly from requested offset

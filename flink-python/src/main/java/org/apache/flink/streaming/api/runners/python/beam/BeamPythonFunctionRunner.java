@@ -280,7 +280,10 @@ public abstract class BeamPythonFunctionRunner implements PythonFunctionRunner {
 
         try {
             if (sharedResources != null) {
-                sharedResources.close();
+                if (sharedResources.getResourceHandle().release()) {
+                    // release sharedResources iff there are no more Python operators sharing it
+                    sharedResources.close();
+                }
             } else {
                 // if sharedResources is not null, the close of environmentManager will be managed
                 // in sharedResources,
@@ -313,11 +316,8 @@ public abstract class BeamPythonFunctionRunner implements PythonFunctionRunner {
     @Override
     public void flush() throws Exception {
         if (bundleStarted) {
-            try {
-                finishBundle();
-            } finally {
-                bundleStarted = false;
-            }
+            finishBundle();
+            bundleStarted = false;
         }
     }
 

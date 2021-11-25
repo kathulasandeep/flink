@@ -97,7 +97,10 @@ public class NestedMapsStateTable<K, N, S> extends StateTable<K, N, S> {
         @Override
         protected StateMapSnapshot<K, N, S, ? extends StateMap<K, N, S>>
                 getStateMapSnapshotForKeyGroup(int keyGroup) {
-            return owningStateTable.getMapForKeyGroup(keyGroup).stateSnapshot();
+            NestedStateMap<K, N, S> stateMap =
+                    (NestedStateMap<K, N, S>) owningStateTable.getMapForKeyGroup(keyGroup);
+
+            return stateMap.stateSnapshot();
         }
 
         @Override

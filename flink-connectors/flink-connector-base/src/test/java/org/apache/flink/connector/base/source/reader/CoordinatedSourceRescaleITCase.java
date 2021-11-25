@@ -24,14 +24,13 @@ import org.apache.flink.configuration.CheckpointingOptions;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.MemorySize;
 import org.apache.flink.configuration.TaskManagerOptions;
-import org.apache.flink.core.testutils.FlinkMatchers;
 import org.apache.flink.runtime.jobgraph.SavepointConfigOptions;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.CheckpointConfig;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.sink.SinkFunction;
-import org.apache.flink.util.TestLogger;
 
+import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -42,19 +41,14 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Comparator;
 
-import static org.apache.flink.runtime.state.filesystem.AbstractFsCheckpointStorageAccess.CHECKPOINT_DIR_PREFIX;
-import static org.apache.flink.runtime.state.filesystem.AbstractFsCheckpointStorageAccess.METADATA_FILE_NAME;
-import static org.junit.Assert.assertThat;
+import static org.junit.Assert.assertEquals;
 
 /** Tests if the coordinator handles up and downscaling. */
-public class CoordinatedSourceRescaleITCase extends TestLogger {
-
+public class CoordinatedSourceRescaleITCase {
     public static final String CREATED_CHECKPOINT = "successfully created checkpoint";
     public static final String RESTORED_CHECKPOINT = "successfully restored checkpoint";
-
     @Rule public final TemporaryFolder temp = new TemporaryFolder();
 
     @Test
@@ -78,18 +72,17 @@ public class CoordinatedSourceRescaleITCase extends TestLogger {
             env.execute("create checkpoint");
             throw new AssertionError("No checkpoint");
         } catch (Exception e) {
-            assertThat(e, FlinkMatchers.containsMessage(CREATED_CHECKPOINT));
-            return Files.find(checkpointDir.toPath(), 2, this::isCompletedCheckpoint)
-                    .max(Comparator.comparing(Path::toString))
+            assertEquals(CREATED_CHECKPOINT, ExceptionUtils.getRootCause(e).getMessage());
+            return Files.find(
+                            checkpointDir.toPath(),
+                            2,
+                            (file, attr) ->
+                                    attr.isDirectory()
+                                            && file.getFileName().toString().startsWith("chk"))
+                    .min(Comparator.comparing(Path::toString))
                     .map(Path::toFile)
                     .orElseThrow(() -> new IllegalStateException("Cannot generate checkpoint", e));
         }
-    }
-
-    private boolean isCompletedCheckpoint(Path path, BasicFileAttributes attr) {
-        return attr.isDirectory()
-                && path.getFileName().toString().startsWith(CHECKPOINT_DIR_PREFIX)
-                && Files.exists(path.resolve(METADATA_FILE_NAME));
     }
 
     private void resumeCheckpoint(File checkpointDir, File restoreCheckpoint, int p) {
@@ -99,7 +92,9 @@ public class CoordinatedSourceRescaleITCase extends TestLogger {
             env.execute("resume checkpoint");
             throw new AssertionError("No success error");
         } catch (Exception e) {
-            assertThat(e, FlinkMatchers.containsMessage(RESTORED_CHECKPOINT));
+            if (RESTORED_CHECKPOINT != ExceptionUtils.getRootCause(e).getMessage()) {
+                throw new AssertionError("Cannot resume", e);
+            }
         }
     }
 
@@ -131,8 +126,7 @@ public class CoordinatedSourceRescaleITCase extends TestLogger {
     private static class FailingMapFunction extends RichMapFunction<Long, Long>
             implements CheckpointListener {
         private static final long serialVersionUID = 699621912578369378L;
-        private final boolean generateCheckpoint;
-        private boolean processedRecord;
+        private boolean generateCheckpoint;
 
         FailingMapFunction(boolean generateCheckpoint) {
             this.generateCheckpoint = generateCheckpoint;
@@ -140,7 +134,6 @@ public class CoordinatedSourceRescaleITCase extends TestLogger {
 
         @Override
         public Long map(Long value) throws Exception {
-            processedRecord = true;
             // run a bit before failing
             if (!generateCheckpoint && value % 100 == 42) {
                 throw new Exception(RESTORED_CHECKPOINT);
@@ -150,7 +143,7 @@ public class CoordinatedSourceRescaleITCase extends TestLogger {
 
         @Override
         public void notifyCheckpointComplete(long checkpointId) throws Exception {
-            if (generateCheckpoint && processedRecord && checkpointId > 5) {
+            if (generateCheckpoint && checkpointId > 5) {
                 throw new Exception(CREATED_CHECKPOINT);
             }
         }

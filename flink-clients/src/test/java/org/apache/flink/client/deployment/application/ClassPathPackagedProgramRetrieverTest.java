@@ -31,17 +31,14 @@ import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.CoreOptions;
 import org.apache.flink.configuration.PipelineOptions;
 import org.apache.flink.configuration.PipelineOptionsInternal;
-import org.apache.flink.runtime.execution.librarycache.FlinkUserCodeClassLoaders;
 import org.apache.flink.runtime.jobgraph.JobGraph;
 import org.apache.flink.runtime.jobgraph.SavepointRestoreSettings;
-import org.apache.flink.util.ChildFirstClassLoader;
 import org.apache.flink.util.ExceptionUtils;
 import org.apache.flink.util.FileUtils;
 import org.apache.flink.util.FlinkException;
 import org.apache.flink.util.TestLogger;
 import org.apache.flink.util.function.FunctionUtils;
 
-import org.hamcrest.core.IsInstanceOf;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.ClassRule;
@@ -68,7 +65,6 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasProperty;
 import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.not;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
@@ -146,7 +142,7 @@ public class ClassPathPackagedProgramRetrieverTest extends TestLogger {
         configuration.set(PipelineOptionsInternal.PIPELINE_FIXED_JOB_ID, jobId.toHexString());
 
         final ClassPathPackagedProgramRetriever retrieverUnderTest =
-                ClassPathPackagedProgramRetriever.newBuilder(PROGRAM_ARGUMENTS, new Configuration())
+                ClassPathPackagedProgramRetriever.newBuilder(PROGRAM_ARGUMENTS)
                         .setJobClassName(TestJob.class.getCanonicalName())
                         .build();
 
@@ -165,7 +161,7 @@ public class ClassPathPackagedProgramRetrieverTest extends TestLogger {
             throws IOException, FlinkException, ProgramInvocationException {
         final File testJar = TestJob.getTestJobJar();
         final ClassPathPackagedProgramRetriever retrieverUnderTest =
-                ClassPathPackagedProgramRetriever.newBuilder(PROGRAM_ARGUMENTS, new Configuration())
+                ClassPathPackagedProgramRetriever.newBuilder(PROGRAM_ARGUMENTS)
                         .setJarsOnClassPath(() -> Collections.singleton(testJar))
                         .build();
 
@@ -180,7 +176,7 @@ public class ClassPathPackagedProgramRetrieverTest extends TestLogger {
         final File testJar = new File("non-existing");
 
         final ClassPathPackagedProgramRetriever retrieverUnderTest =
-                ClassPathPackagedProgramRetriever.newBuilder(PROGRAM_ARGUMENTS, new Configuration())
+                ClassPathPackagedProgramRetriever.newBuilder(PROGRAM_ARGUMENTS)
                         // Both a class name is specified and a JAR "is" on the class path
                         // The class name should have precedence.
                         .setJobClassName(TestJob.class.getCanonicalName())
@@ -204,7 +200,7 @@ public class ClassPathPackagedProgramRetrieverTest extends TestLogger {
         SavepointRestoreSettings.toConfiguration(savepointRestoreSettings, configuration);
 
         final ClassPathPackagedProgramRetriever retrieverUnderTest =
-                ClassPathPackagedProgramRetriever.newBuilder(PROGRAM_ARGUMENTS, new Configuration())
+                ClassPathPackagedProgramRetriever.newBuilder(PROGRAM_ARGUMENTS)
                         .setJobClassName(TestJob.class.getCanonicalName())
                         .build();
 
@@ -253,7 +249,7 @@ public class ClassPathPackagedProgramRetrieverTest extends TestLogger {
             throws IOException, ProgramInvocationException {
         final File testJar = TestJob.getTestJobJar();
         final ClassPathPackagedProgramRetriever retrieverUnderTest =
-                ClassPathPackagedProgramRetriever.newBuilder(PROGRAM_ARGUMENTS, new Configuration())
+                ClassPathPackagedProgramRetriever.newBuilder(PROGRAM_ARGUMENTS)
                         .setJarsOnClassPath(() -> Collections.singleton(testJar))
                         .setUserLibDirectory(userDirHasNotEntryClass)
                         .build();
@@ -272,7 +268,7 @@ public class ClassPathPackagedProgramRetrieverTest extends TestLogger {
     public void testJobGraphRetrievalFailIfDoesNotFindTheEntryClassInTheJobDir()
             throws IOException, ProgramInvocationException {
         final ClassPathPackagedProgramRetriever retrieverUnderTest =
-                ClassPathPackagedProgramRetriever.newBuilder(PROGRAM_ARGUMENTS, new Configuration())
+                ClassPathPackagedProgramRetriever.newBuilder(PROGRAM_ARGUMENTS)
                         .setJobClassName(TestJobInfo.JOB_CLASS)
                         .setJarsOnClassPath(Collections::emptyList)
                         .setUserLibDirectory(userDirHasNotEntryClass)
@@ -292,7 +288,7 @@ public class ClassPathPackagedProgramRetrieverTest extends TestLogger {
     public void testRetrieveCorrectUserClasspathsWithoutSpecifiedEntryClass()
             throws IOException, FlinkException, ProgramInvocationException {
         final ClassPathPackagedProgramRetriever retrieverUnderTest =
-                ClassPathPackagedProgramRetriever.newBuilder(PROGRAM_ARGUMENTS, new Configuration())
+                ClassPathPackagedProgramRetriever.newBuilder(PROGRAM_ARGUMENTS)
                         .setJarsOnClassPath(Collections::emptyList)
                         .setUserLibDirectory(userDirHasEntryClass)
                         .build();
@@ -307,7 +303,7 @@ public class ClassPathPackagedProgramRetrieverTest extends TestLogger {
     public void testRetrieveCorrectUserClasspathsWithSpecifiedEntryClass()
             throws IOException, FlinkException, ProgramInvocationException {
         final ClassPathPackagedProgramRetriever retrieverUnderTest =
-                ClassPathPackagedProgramRetriever.newBuilder(PROGRAM_ARGUMENTS, new Configuration())
+                ClassPathPackagedProgramRetriever.newBuilder(PROGRAM_ARGUMENTS)
                         .setJobClassName(TestJobInfo.JOB_CLASS)
                         .setJarsOnClassPath(Collections::emptyList)
                         .setUserLibDirectory(userDirHasEntryClass)
@@ -324,7 +320,7 @@ public class ClassPathPackagedProgramRetrieverTest extends TestLogger {
             throws IOException, FlinkException, ProgramInvocationException {
         final File testJar = TestJob.getTestJobJar();
         final ClassPathPackagedProgramRetriever retrieverUnderTest =
-                ClassPathPackagedProgramRetriever.newBuilder(PROGRAM_ARGUMENTS, new Configuration())
+                ClassPathPackagedProgramRetriever.newBuilder(PROGRAM_ARGUMENTS)
                         .setJarFile(testJar)
                         .build();
         final JobGraph jobGraph = retrieveJobGraph(retrieverUnderTest, new Configuration());
@@ -340,7 +336,7 @@ public class ClassPathPackagedProgramRetrieverTest extends TestLogger {
             throws IOException, FlinkException, ProgramInvocationException {
         final File testJar = TestJob.getTestJobJar();
         final ClassPathPackagedProgramRetriever retrieverUnderTest =
-                ClassPathPackagedProgramRetriever.newBuilder(PROGRAM_ARGUMENTS, new Configuration())
+                ClassPathPackagedProgramRetriever.newBuilder(PROGRAM_ARGUMENTS)
                         .setJarFile(testJar)
                         .setUserLibDirectory(userDirHasEntryClass)
                         .build();
@@ -352,50 +348,6 @@ public class ClassPathPackagedProgramRetrieverTest extends TestLogger {
         assertThat(
                 jobGraph.getClasspaths().stream().map(URL::toString).collect(Collectors.toList()),
                 containsInAnyOrder(expectedURLs.stream().map(URL::toString).toArray()));
-    }
-
-    @Test
-    public void testChildFirstDefaultConfiguration() throws FlinkException, IOException {
-        // this is a sanity check to backup testConfigurationIsConsidered
-        final Configuration configuration = new Configuration();
-        // CHECK_LEAKED_CLASSLOADER has to be disabled to enable the instanceof check later on in
-        // this test. Otherwise, the actual instance would be hidden by a wrapper
-        configuration.set(CoreOptions.CHECK_LEAKED_CLASSLOADER, false);
-
-        final ClassPathPackagedProgramRetriever retriever =
-                ClassPathPackagedProgramRetriever.newBuilder(PROGRAM_ARGUMENTS, configuration)
-                        .setUserLibDirectory(userDirHasEntryClass)
-                        .setJobClassName(TestJobInfo.JOB_CLASS)
-                        .build();
-
-        assertThat(
-                retriever.getPackagedProgram().getUserCodeClassLoader(),
-                IsInstanceOf.instanceOf(ChildFirstClassLoader.class));
-    }
-
-    @Test
-    public void testConfigurationIsConsidered() throws FlinkException, IOException {
-        final String parentFirstConfigValue = "parent-first";
-        // we want to make sure that parent-first is not set as a default
-        assertThat(
-                CoreOptions.CLASSLOADER_RESOLVE_ORDER.defaultValue(),
-                not(is(parentFirstConfigValue)));
-
-        final Configuration configuration = new Configuration();
-        configuration.set(CoreOptions.CLASSLOADER_RESOLVE_ORDER, parentFirstConfigValue);
-        // CHECK_LEAKED_CLASSLOADER has to be disabled to enable the instanceof check later on in
-        // this test. Otherwise, the actual instance would be hidden by a wrapper
-        configuration.set(CoreOptions.CHECK_LEAKED_CLASSLOADER, false);
-
-        final ClassPathPackagedProgramRetriever retriever =
-                ClassPathPackagedProgramRetriever.newBuilder(PROGRAM_ARGUMENTS, configuration)
-                        .setUserLibDirectory(userDirHasEntryClass)
-                        .setJobClassName(TestJobInfo.JOB_CLASS)
-                        .build();
-
-        assertThat(
-                retriever.getPackagedProgram().getUserCodeClassLoader(),
-                IsInstanceOf.instanceOf(FlinkUserCodeClassLoaders.ParentFirstClassLoader.class));
     }
 
     private JobGraph retrieveJobGraph(

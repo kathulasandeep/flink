@@ -18,8 +18,6 @@
 
 package org.apache.flink.runtime.registration;
 
-import org.apache.flink.util.SerializedThrowable;
-
 import java.io.Serializable;
 
 /** Base class for responses given to registration attempts from {@link RetryingRegistration}. */
@@ -44,57 +42,30 @@ public abstract class RegistrationResponse implements Serializable {
 
     // ----------------------------------------------------------------------------
 
-    /**
-     * A registration failure.
-     *
-     * <p>A failure indicates a temporary problem which can be solved by retrying the connection
-     * attempt. That's why the {@link RetryingRegistration} will retry the registration with the
-     * target upon receiving a {@link Failure} response. Consequently, the target should answer with
-     * a {@link Failure} if a temporary failure has occurred.
-     */
-    public static final class Failure extends RegistrationResponse {
+    /** A rejected (declined) registration. */
+    public static final class Decline extends RegistrationResponse {
         private static final long serialVersionUID = 1L;
 
-        /** The failure reason. */
-        private final SerializedThrowable reason;
+        /** The rejection reason. */
+        private final String reason;
 
         /**
-         * Creates a new failure message.
+         * Creates a new rejection message.
          *
-         * @param reason The reason for the failure.
+         * @param reason The reason for the rejection.
          */
-        public Failure(Throwable reason) {
-            this.reason = new SerializedThrowable(reason);
+        public Decline(String reason) {
+            this.reason = reason != null ? reason : "(unknown)";
         }
 
-        /** Gets the reason for the failure. */
-        public SerializedThrowable getReason() {
+        /** Gets the reason for the rejection. */
+        public String getReason() {
             return reason;
         }
 
         @Override
         public String toString() {
-            return "Registration Failure (" + reason + ')';
-        }
-    }
-
-    // ----------------------------------------------------------------------------
-
-    /**
-     * A rejected (declined) registration.
-     *
-     * <p>A rejection indicates a permanent problem which prevents the registration between the
-     * target and the caller which cannot be solved by retrying the connection. Consequently, the
-     * {@link RetryingRegistration} will stop when it receives a {@link Rejection} response from the
-     * target. Moreover, a target should respond with {@link Rejection} if it realizes that it
-     * cannot work with the caller.
-     */
-    public static class Rejection extends RegistrationResponse {
-        private static final long serialVersionUID = 1L;
-
-        @Override
-        public String toString() {
-            return "Registration Rejected";
+            return "Registration Declined (" + reason + ')';
         }
     }
 }

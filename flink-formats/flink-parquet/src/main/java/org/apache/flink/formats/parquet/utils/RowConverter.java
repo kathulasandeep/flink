@@ -301,7 +301,6 @@ public class RowConverter extends GroupConverter implements ParentDataHolder {
                     case INT_8:
                     case INT_16:
                     case INT_32:
-                    case DECIMAL:
                         parentDataHolder.add(pos, value);
                         break;
                     default:

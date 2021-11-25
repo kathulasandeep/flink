@@ -63,15 +63,15 @@ public final class StandaloneApplicationClusterEntryPoint extends ApplicationClu
                         new StandaloneApplicationClusterConfigurationParserFactory(),
                         StandaloneApplicationClusterEntryPoint.class);
 
-        Configuration configuration = loadConfigurationFromClusterConfig(clusterConfiguration);
         PackagedProgram program = null;
         try {
-            program = getPackagedProgram(clusterConfiguration, configuration);
+            program = getPackagedProgram(clusterConfiguration);
         } catch (Exception e) {
             LOG.error("Could not create application program.", e);
             System.exit(1);
         }
 
+        Configuration configuration = loadConfigurationFromClusterConfig(clusterConfiguration);
         try {
             configureExecution(configuration, program);
         } catch (Exception e) {
@@ -96,25 +96,20 @@ public final class StandaloneApplicationClusterEntryPoint extends ApplicationClu
     }
 
     private static PackagedProgram getPackagedProgram(
-            final StandaloneApplicationClusterConfiguration clusterConfiguration,
-            Configuration configuration)
+            final StandaloneApplicationClusterConfiguration clusterConfiguration)
             throws IOException, FlinkException {
         final PackagedProgramRetriever programRetriever =
                 getPackagedProgramRetriever(
-                        clusterConfiguration.getArgs(),
-                        clusterConfiguration.getJobClassName(),
-                        configuration);
+                        clusterConfiguration.getArgs(), clusterConfiguration.getJobClassName());
         return programRetriever.getPackagedProgram();
     }
 
     private static PackagedProgramRetriever getPackagedProgramRetriever(
-            final String[] programArguments,
-            @Nullable final String jobClassName,
-            Configuration configuration)
+            final String[] programArguments, @Nullable final String jobClassName)
             throws IOException {
         final File userLibDir = ClusterEntrypointUtils.tryFindUserLibDirectory().orElse(null);
         final ClassPathPackagedProgramRetriever.Builder retrieverBuilder =
-                ClassPathPackagedProgramRetriever.newBuilder(programArguments, configuration)
+                ClassPathPackagedProgramRetriever.newBuilder(programArguments)
                         .setUserLibDirectory(userLibDir)
                         .setJobClassName(jobClassName);
         return retrieverBuilder.build();

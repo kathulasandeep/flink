@@ -106,20 +106,20 @@ public class ContinuousFileReaderOperator<OUT, T extends TimestampedInputSplit>
     private enum ReaderState {
         IDLE {
             @Override
-            public <T extends TimestampedInputSplit> boolean prepareToProcessRecord(
-                    ContinuousFileReaderOperator<?, T> op) throws IOException {
+            public boolean prepareToProcessRecord(ContinuousFileReaderOperator<?, ?> op) {
                 throw new IllegalStateException("not processing any records in IDLE state");
             }
         },
         /** A message is enqueued to process split, but no split is opened. */
         OPENING { // the split was added and message to itself was enqueued to process it
-            public <T extends TimestampedInputSplit> boolean prepareToProcessRecord(
-                    ContinuousFileReaderOperator<?, T> op) throws IOException {
+            @Override
+            public boolean prepareToProcessRecord(ContinuousFileReaderOperator<?, ?> op)
+                    throws IOException {
                 if (op.splits.isEmpty()) {
                     op.switchState(ReaderState.IDLE);
                     return false;
                 } else {
-                    op.loadSplit(op.splits.poll());
+                    ((ContinuousFileReaderOperator) op).loadSplit(op.splits.poll());
                     op.switchState(ReaderState.READING);
                     return true;
                 }
@@ -128,8 +128,7 @@ public class ContinuousFileReaderOperator<OUT, T extends TimestampedInputSplit>
         /** A message is enqueued to process split and its processing was started. */
         READING {
             @Override
-            public <T extends TimestampedInputSplit> boolean prepareToProcessRecord(
-                    ContinuousFileReaderOperator<?, T> op) throws IOException {
+            public boolean prepareToProcessRecord(ContinuousFileReaderOperator<?, ?> op) {
                 return true;
             }
 
@@ -144,8 +143,7 @@ public class ContinuousFileReaderOperator<OUT, T extends TimestampedInputSplit>
          */
         FAILED {
             @Override
-            public <T extends TimestampedInputSplit> boolean prepareToProcessRecord(
-                    ContinuousFileReaderOperator<?, T> op) throws IOException {
+            public boolean prepareToProcessRecord(ContinuousFileReaderOperator<?, ?> op) {
                 throw new IllegalStateException("not processing any records in ERRORED state");
             }
         },
@@ -155,10 +153,10 @@ public class ContinuousFileReaderOperator<OUT, T extends TimestampedInputSplit>
          */
         CLOSING {
             @Override
-            public <T extends TimestampedInputSplit> boolean prepareToProcessRecord(
-                    ContinuousFileReaderOperator<?, T> op) throws IOException {
+            public boolean prepareToProcessRecord(ContinuousFileReaderOperator<?, ?> op)
+                    throws IOException {
                 if (op.currentSplit == null && !op.splits.isEmpty()) {
-                    op.loadSplit(op.splits.poll());
+                    ((ContinuousFileReaderOperator) op).loadSplit(op.splits.poll());
                 }
                 return true;
             }
@@ -173,8 +171,7 @@ public class ContinuousFileReaderOperator<OUT, T extends TimestampedInputSplit>
         },
         CLOSED {
             @Override
-            public <T extends TimestampedInputSplit> boolean prepareToProcessRecord(
-                    ContinuousFileReaderOperator<?, T> op) {
+            public boolean prepareToProcessRecord(ContinuousFileReaderOperator<?, ?> op) {
                 LOG.warn("not processing any records while closed");
                 return false;
             }
@@ -214,8 +211,8 @@ public class ContinuousFileReaderOperator<OUT, T extends TimestampedInputSplit>
          *
          * @return true if should read the record
          */
-        public abstract <T extends TimestampedInputSplit> boolean prepareToProcessRecord(
-                ContinuousFileReaderOperator<?, T> op) throws IOException;
+        public abstract boolean prepareToProcessRecord(ContinuousFileReaderOperator<?, ?> op)
+                throws IOException;
 
         public void onNoMoreData(ContinuousFileReaderOperator<?, ?> op) {}
     }
@@ -500,6 +497,7 @@ public class ContinuousFileReaderOperator<OUT, T extends TimestampedInputSplit>
 
         RunnableWithException[] runClose = {
             () -> sourceContext.close(),
+            () -> output.close(),
             () -> format.close(),
             () -> {
                 if (this.format instanceof RichInputFormat) {

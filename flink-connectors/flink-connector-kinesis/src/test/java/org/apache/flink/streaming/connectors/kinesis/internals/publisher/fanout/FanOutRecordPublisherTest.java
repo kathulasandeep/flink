@@ -19,7 +19,6 @@ package org.apache.flink.streaming.connectors.kinesis.internals.publisher.fanout
 
 import org.apache.flink.streaming.connectors.kinesis.internals.publisher.RecordBatch;
 import org.apache.flink.streaming.connectors.kinesis.internals.publisher.RecordPublisher;
-import org.apache.flink.streaming.connectors.kinesis.internals.publisher.RecordPublisher.RecordPublisherRunResult;
 import org.apache.flink.streaming.connectors.kinesis.model.SequenceNumber;
 import org.apache.flink.streaming.connectors.kinesis.model.StartingPosition;
 import org.apache.flink.streaming.connectors.kinesis.proxy.FullJitterBackoff;
@@ -29,7 +28,6 @@ import org.apache.flink.streaming.connectors.kinesis.testutils.FakeKinesisFanOut
 import org.apache.flink.streaming.connectors.kinesis.testutils.FakeKinesisFanOutBehavioursFactory.SubscriptionErrorKinesisV2;
 import org.apache.flink.streaming.connectors.kinesis.testutils.TestUtils.TestConsumer;
 
-import com.amazonaws.http.timers.client.SdkInterruptedException;
 import com.amazonaws.services.kinesis.clientlibrary.types.UserRecord;
 import io.netty.handler.timeout.ReadTimeoutException;
 import org.hamcrest.Matchers;
@@ -56,11 +54,11 @@ import static org.apache.flink.streaming.connectors.kinesis.config.ConsumerConfi
 import static org.apache.flink.streaming.connectors.kinesis.config.ConsumerConfigConstants.SUBSCRIBE_TO_SHARD_BACKOFF_EXPONENTIAL_CONSTANT;
 import static org.apache.flink.streaming.connectors.kinesis.config.ConsumerConfigConstants.SUBSCRIBE_TO_SHARD_BACKOFF_MAX;
 import static org.apache.flink.streaming.connectors.kinesis.config.ConsumerConfigConstants.SUBSCRIBE_TO_SHARD_RETRIES;
-import static org.apache.flink.streaming.connectors.kinesis.internals.publisher.RecordPublisher.RecordPublisherRunResult.CANCELLED;
 import static org.apache.flink.streaming.connectors.kinesis.internals.publisher.RecordPublisher.RecordPublisherRunResult.COMPLETE;
 import static org.apache.flink.streaming.connectors.kinesis.internals.publisher.RecordPublisher.RecordPublisherRunResult.INCOMPLETE;
 import static org.apache.flink.streaming.connectors.kinesis.model.SentinelSequenceNumber.SENTINEL_EARLIEST_SEQUENCE_NUM;
 import static org.apache.flink.streaming.connectors.kinesis.model.SentinelSequenceNumber.SENTINEL_LATEST_SEQUENCE_NUM;
+import static org.apache.flink.streaming.connectors.kinesis.testutils.FakeKinesisFanOutBehavioursFactory.SubscriptionErrorKinesisV2.NUMBER_OF_SUBSCRIPTIONS;
 import static org.apache.flink.streaming.connectors.kinesis.testutils.FakeKinesisFanOutBehavioursFactory.emptyShard;
 import static org.apache.flink.streaming.connectors.kinesis.testutils.FakeKinesisFanOutBehavioursFactory.singletonShard;
 import static org.apache.flink.streaming.connectors.kinesis.testutils.TestUtils.createDummyStreamShardHandle;
@@ -246,15 +244,16 @@ public class FanOutRecordPublisherTest {
         RecordPublisher recordPublisher = createRecordPublisher(kinesis);
         TestConsumer consumer = new TestConsumer();
 
-        RecordPublisherRunResult result = recordPublisher.run(consumer);
+        int count = 0;
+        while (recordPublisher.run(consumer) == INCOMPLETE) {
+            if (++count > NUMBER_OF_SUBSCRIPTIONS + 1) {
+                break;
+            }
+        }
 
-        // An exception is thrown after the 5th record in each subscription, therefore we expect to
-        // receive 5 records
-        assertEquals(5, consumer.getRecordBatches().size());
-        assertEquals(1, kinesis.getNumberOfSubscribeToShardInvocations());
-
-        // INCOMPLETE is returned to indicate the shard is not complete
-        assertEquals(INCOMPLETE, result);
+        // An exception is thrown on the 5th subscription and then the subscription completes on the
+        // next
+        assertEquals(NUMBER_OF_SUBSCRIPTIONS + 1, kinesis.getNumberOfSubscribeToShardInvocations());
     }
 
     @Test
@@ -343,7 +342,8 @@ public class FanOutRecordPublisherTest {
                         backoff);
 
         int count = 0;
-        while (recordPublisher.run(new TestConsumer()) == RecordPublisherRunResult.INCOMPLETE) {
+        while (recordPublisher.run(new TestConsumer())
+                == RecordPublisher.RecordPublisherRunResult.INCOMPLETE) {
             if (++count > EXPECTED_SUBSCRIBE_TO_SHARD_RETRIES) {
                 break;
             }
@@ -486,20 +486,6 @@ public class FanOutRecordPublisherTest {
                 subsequence = 0;
             }
         }
-    }
-
-    @Test
-    public void testInterruptedPublisherReturnsCancelled() throws Exception {
-        KinesisProxyV2Interface kinesis =
-                FakeKinesisFanOutBehavioursFactory.errorDuringSubscription(
-                        new SdkInterruptedException(null));
-
-        RecordPublisher publisher =
-                createRecordPublisher(
-                        kinesis, StartingPosition.continueFromSequenceNumber(SEQUENCE_NUMBER));
-        RecordPublisherRunResult actual = publisher.run(new TestConsumer());
-
-        assertEquals(CANCELLED, actual);
     }
 
     private List<UserRecord> flattenToUserRecords(final List<RecordBatch> recordBatch) {

@@ -18,19 +18,20 @@
 
 package org.apache.flink.connector.kafka.source.enumerator;
 
-import org.apache.kafka.common.TopicPartition;
+import org.apache.flink.connector.kafka.source.split.KafkaPartitionSplit;
 
+import java.util.Map;
 import java.util.Set;
 
 /** The state of Kafka source enumerator. */
 public class KafkaSourceEnumState {
-    private final Set<TopicPartition> assignedPartitions;
+    private final Map<Integer, Set<KafkaPartitionSplit>> currentAssignment;
 
-    KafkaSourceEnumState(Set<TopicPartition> assignedPartitions) {
-        this.assignedPartitions = assignedPartitions;
+    KafkaSourceEnumState(Map<Integer, Set<KafkaPartitionSplit>> currentAssignment) {
+        this.currentAssignment = currentAssignment;
     }
 
-    public Set<TopicPartition> assignedPartitions() {
-        return assignedPartitions;
+    public Map<Integer, Set<KafkaPartitionSplit>> getCurrentAssignment() {
+        return currentAssignment;
     }
 }

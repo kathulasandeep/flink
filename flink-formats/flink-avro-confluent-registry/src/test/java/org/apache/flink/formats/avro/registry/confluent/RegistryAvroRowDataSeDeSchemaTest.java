@@ -54,7 +54,6 @@ import static org.apache.flink.formats.avro.utils.AvroTestUtils.writeRecord;
 import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.core.Is.is;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThat;
 
 /**
@@ -149,8 +148,6 @@ public class RegistryAvroRowDataSeDeSchemaTest {
 
         serializer.open(null);
         deserializer.open(null);
-
-        assertNull(deserializer.deserialize(null));
 
         RowData oriData = address2RowData(address);
         byte[] serialized = serializer.serialize(oriData);

@@ -56,15 +56,9 @@ public class MapDataSerializer extends org.apache.flink.table.runtime.typeutils.
 
     private final TypeSerializer valueTypeSerializer;
 
-    private final BinaryWriter.ValueSetter keySetter;
-
-    private final BinaryWriter.ValueSetter valueSetter;
-
     private final ArrayData.ElementGetter keyGetter;
 
     private final ArrayData.ElementGetter valueGetter;
-
-    private final BinaryArrayWriter.NullSetter nullValueSetter;
 
     private final int keySize;
 
@@ -84,9 +78,6 @@ public class MapDataSerializer extends org.apache.flink.table.runtime.typeutils.
         this.valueSize = BinaryArrayData.calculateFixLengthPartSize(this.valueType);
         this.keyGetter = ArrayData.createElementGetter(keyType);
         this.valueGetter = ArrayData.createElementGetter(valueType);
-        this.nullValueSetter = BinaryArrayWriter.createNullSetter(valueType);
-        this.keySetter = BinaryWriter.createValueSetter(keyType);
-        this.valueSetter = BinaryWriter.createValueSetter(valueType);
     }
 
     @Override
@@ -136,13 +127,13 @@ public class MapDataSerializer extends org.apache.flink.table.runtime.typeutils.
         BinaryArrayWriter valueWriter = new BinaryArrayWriter(valueArray, size, valueSize);
         for (int i = 0; i < size; i++) {
             Object key = keyTypeSerializer.deserialize(source);
-            keySetter.setValue(keyWriter, i, key);
+            BinaryWriter.write(keyWriter, i, key, keyType, keyTypeSerializer);
             boolean isNull = source.readBoolean();
             if (isNull) {
-                nullValueSetter.setNull(valueWriter, i);
+                valueWriter.setNullAt(i);
             } else {
                 Object value = valueTypeSerializer.deserialize(source);
-                valueSetter.setValue(valueWriter, i, value);
+                BinaryWriter.write(valueWriter, i, value, valueType, valueTypeSerializer);
             }
         }
         keyWriter.complete();

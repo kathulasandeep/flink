@@ -38,7 +38,6 @@ import org.apache.flink.runtime.messages.checkpoint.AcknowledgeCheckpoint;
 import org.apache.flink.runtime.messages.checkpoint.DeclineCheckpoint;
 import org.apache.flink.runtime.operators.coordination.OperatorCoordinator;
 import org.apache.flink.runtime.operators.coordination.OperatorInfo;
-import org.apache.flink.runtime.persistence.PossibleInconsistentStateException;
 import org.apache.flink.runtime.state.CheckpointStorageCoordinatorView;
 import org.apache.flink.runtime.state.CheckpointStorageLocation;
 import org.apache.flink.runtime.state.CompletedCheckpointStorageLocation;
@@ -1211,16 +1210,21 @@ public class CheckpointCoordinator {
                 completedCheckpointStore.addCheckpoint(
                         completedCheckpoint, checkpointsCleaner, this::scheduleTriggerRequest);
             } catch (Exception exception) {
-                if (exception instanceof PossibleInconsistentStateException) {
-                    LOG.warn(
-                            "An error occurred while writing checkpoint {} to the underlying metadata store. Flink was not able to determine whether the metadata was successfully persisted. The corresponding state located at '{}' won't be discarded and needs to be cleaned up manually.",
-                            completedCheckpoint.getCheckpointID(),
-                            completedCheckpoint.getExternalPointer());
-                } else {
-                    // we failed to store the completed checkpoint. Let's clean up
-                    checkpointsCleaner.cleanCheckpointOnFailedStoring(
-                            completedCheckpoint, executor);
-                }
+                // we failed to store the completed checkpoint. Let's clean up
+                executor.execute(
+                        new Runnable() {
+                            @Override
+                            public void run() {
+                                try {
+                                    completedCheckpoint.discardOnFailedStoring();
+                                } catch (Throwable t) {
+                                    LOG.warn(
+                                            "Could not properly discard completed checkpoint {}.",
+                                            completedCheckpoint.getCheckpointID(),
+                                            t);
+                                }
+                            }
+                        });
 
                 sendAbortedMessages(checkpointId, pendingCheckpoint.getCheckpointTimestamp());
                 throw new CheckpointException(
@@ -1529,13 +1533,13 @@ public class CheckpointCoordinator {
                     throw new IllegalStateException("No completed checkpoint available");
                 }
 
-                LOG.debug("Resetting the master hooks.");
-                MasterHooks.reset(masterHooks.values(), LOG);
-
                 if (operatorCoordinatorRestoreBehavior
                         == OperatorCoordinatorRestoreBehavior.RESTORE_OR_RESET) {
                     // we let the JobManager-side components know that there was a recovery,
                     // even if there was no checkpoint to recover from, yet
+                    LOG.debug("Resetting the master hooks.");
+                    MasterHooks.reset(masterHooks.values(), LOG);
+
                     LOG.info("Resetting the Operator Coordinators to an empty state.");
                     restoreStateToCoordinators(
                             OperatorCoordinator.NO_CHECKPOINT, Collections.emptyMap());

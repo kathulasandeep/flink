@@ -19,9 +19,16 @@ limitations under the License.
 package org.apache.flink.runtime.source.coordinator;
 
 import org.apache.flink.api.connector.source.mocks.MockSourceSplit;
+import org.apache.flink.api.connector.source.mocks.MockSourceSplitSerializer;
+import org.apache.flink.core.memory.DataInputViewStreamWrapper;
+import org.apache.flink.core.memory.DataOutputViewStreamWrapper;
 
 import org.junit.Test;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashSet;
@@ -51,13 +58,13 @@ public class SplitAssignmentTrackerTest {
     }
 
     @Test
-    public void testOnCheckpoint() throws Exception {
+    public void testTakeSnapshot() throws Exception {
         final long checkpointId = 123L;
         SplitAssignmentTracker<MockSourceSplit> tracker = new SplitAssignmentTracker<>();
         tracker.recordSplitAssignment(getSplitsAssignment(3, 0));
 
         // Serialize
-        tracker.onCheckpoint(checkpointId);
+        takeSnapshot(tracker, checkpointId);
 
         // Verify the uncheckpointed assignments.
         assertTrue(tracker.uncheckpointedAssignments().isEmpty());
@@ -77,6 +84,26 @@ public class SplitAssignmentTrackerTest {
     }
 
     @Test
+    public void testRestore() throws Exception {
+        final long checkpointId = 123L;
+        SplitAssignmentTracker<MockSourceSplit> tracker = new SplitAssignmentTracker<>();
+        tracker.recordSplitAssignment(getSplitsAssignment(1, 0));
+
+        // Serialize
+        byte[] bytes = takeSnapshot(tracker, checkpointId);
+
+        // Deserialize
+        SplitAssignmentTracker<MockSourceSplit> deserializedTracker = restoreSnapshot(bytes);
+        // Verify the restore was successful.
+        assertEquals(
+                deserializedTracker.assignmentsByCheckpointId(),
+                tracker.assignmentsByCheckpointId());
+        assertEquals(
+                deserializedTracker.uncheckpointedAssignments(),
+                tracker.uncheckpointedAssignments());
+    }
+
+    @Test
     public void testOnCheckpointComplete() throws Exception {
         final long checkpointId1 = 100L;
         final long checkpointId2 = 101L;
@@ -86,7 +113,7 @@ public class SplitAssignmentTrackerTest {
         tracker.recordSplitAssignment(getSplitsAssignment(2, 0));
 
         // Take the first snapshot.
-        tracker.onCheckpoint(checkpointId1);
+        takeSnapshot(tracker, checkpointId1);
         verifyAssignment(
                 Arrays.asList("0"), tracker.assignmentsByCheckpointId(checkpointId1).get(0));
         verifyAssignment(
@@ -96,7 +123,7 @@ public class SplitAssignmentTrackerTest {
         tracker.recordSplitAssignment(getSplitsAssignment(2, 3));
 
         // Take the second snapshot.
-        tracker.onCheckpoint(checkpointId2);
+        takeSnapshot(tracker, checkpointId2);
         verifyAssignment(
                 Arrays.asList("0"), tracker.assignmentsByCheckpointId(checkpointId1).get(0));
         verifyAssignment(
@@ -123,11 +150,11 @@ public class SplitAssignmentTrackerTest {
 
         // Assign some splits and take snapshot 1.
         tracker.recordSplitAssignment(getSplitsAssignment(2, 0));
-        tracker.onCheckpoint(checkpointId1);
+        takeSnapshot(tracker, checkpointId1);
 
         // Assign some more splits and take snapshot 2.
         tracker.recordSplitAssignment(getSplitsAssignment(2, 3));
-        tracker.onCheckpoint(checkpointId2);
+        takeSnapshot(tracker, checkpointId2);
 
         // Now assume subtask 0 has failed.
         List<MockSourceSplit> splitsToPutBack =
@@ -143,11 +170,11 @@ public class SplitAssignmentTrackerTest {
 
         // Assign some splits and take snapshot 1.
         tracker.recordSplitAssignment(getSplitsAssignment(2, 0));
-        tracker.onCheckpoint(checkpointId1);
+        takeSnapshot(tracker, checkpointId1);
 
         // Assign some more splits and take snapshot 2.
         tracker.recordSplitAssignment(getSplitsAssignment(2, 3));
-        tracker.onCheckpoint(checkpointId2);
+        takeSnapshot(tracker, checkpointId2);
 
         // Now assume subtask 0 has failed.
         List<MockSourceSplit> splitsToPutBack =
@@ -156,4 +183,26 @@ public class SplitAssignmentTrackerTest {
     }
 
     // ---------------------
+
+    private byte[] takeSnapshot(SplitAssignmentTracker<MockSourceSplit> tracker, long checkpointId)
+            throws Exception {
+        byte[] bytes;
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                DataOutputStream out = new DataOutputViewStreamWrapper(baos)) {
+            tracker.snapshotState(checkpointId, new MockSourceSplitSerializer(), out);
+            out.flush();
+            bytes = baos.toByteArray();
+        }
+        return bytes;
+    }
+
+    private SplitAssignmentTracker<MockSourceSplit> restoreSnapshot(byte[] bytes) throws Exception {
+        SplitAssignmentTracker<MockSourceSplit> deserializedTracker;
+        try (ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
+                DataInputStream in = new DataInputViewStreamWrapper(bais)) {
+            deserializedTracker = new SplitAssignmentTracker<>();
+            deserializedTracker.restoreState(new MockSourceSplitSerializer(), in);
+        }
+        return deserializedTracker;
+    }
 }

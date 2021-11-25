@@ -28,8 +28,6 @@ import org.apache.flink.streaming.api.functions.source.MessageAcknowledgingSourc
 import org.apache.flink.streaming.api.functions.source.MultipleIdsMessageAcknowledgingSourceBase;
 import org.apache.flink.streaming.api.operators.StreamingRuntimeContext;
 import org.apache.flink.streaming.connectors.rabbitmq.common.RMQConnectionConfig;
-import org.apache.flink.util.ExceptionUtils;
-import org.apache.flink.util.IOUtils;
 import org.apache.flink.util.Preconditions;
 
 import com.rabbitmq.client.AMQP;
@@ -259,7 +257,6 @@ public class RMQSource<OUT> extends MultipleIdsMessageAcknowledgingSourceBase<OU
             channel.basicConsume(queueName, autoAck, consumer);
 
         } catch (IOException e) {
-            IOUtils.closeAllQuietly(channel, connection);
             throw new RuntimeException(
                     "Cannot create RMQ connection with "
                             + queueName
@@ -276,38 +273,44 @@ public class RMQSource<OUT> extends MultipleIdsMessageAcknowledgingSourceBase<OU
     @Override
     public void close() throws Exception {
         super.close();
-        Exception exception = null;
 
         try {
             if (consumer != null && channel != null) {
                 channel.basicCancel(consumer.getConsumerTag());
             }
         } catch (IOException e) {
-            exception =
-                    new RuntimeException(
-                            "Error while cancelling RMQ consumer on "
-                                    + queueName
-                                    + " at "
-                                    + rmqConnectionConfig.getHost(),
-                            e);
+            throw new RuntimeException(
+                    "Error while cancelling RMQ consumer on "
+                            + queueName
+                            + " at "
+                            + rmqConnectionConfig.getHost(),
+                    e);
         }
 
         try {
-            IOUtils.closeAll(channel, connection);
+            if (channel != null) {
+                channel.close();
+            }
         } catch (IOException e) {
-            exception =
-                    ExceptionUtils.firstOrSuppressed(
-                            new RuntimeException(
-                                    "Error while closing RMQ source with "
-                                            + queueName
-                                            + " at "
-                                            + rmqConnectionConfig.getHost(),
-                                    e),
-                            exception);
+            throw new RuntimeException(
+                    "Error while closing RMQ channel with "
+                            + queueName
+                            + " at "
+                            + rmqConnectionConfig.getHost(),
+                    e);
         }
 
-        if (exception != null) {
-            throw exception;
+        try {
+            if (connection != null) {
+                connection.close();
+            }
+        } catch (IOException e) {
+            throw new RuntimeException(
+                    "Error while closing RMQ connection with "
+                            + queueName
+                            + " at "
+                            + rmqConnectionConfig.getHost(),
+                    e);
         }
     }
 
@@ -322,14 +325,11 @@ public class RMQSource<OUT> extends MultipleIdsMessageAcknowledgingSourceBase<OU
     @Override
     public void run(SourceContext<OUT> ctx) throws Exception {
         final RMQCollectorImpl collector = new RMQCollectorImpl(ctx);
-        final long timeout = rmqConnectionConfig.getDeliveryTimeout();
         while (running) {
-            Delivery delivery = consumer.nextDelivery(timeout);
+            Delivery delivery = consumer.nextDelivery();
 
             synchronized (ctx.getCheckpointLock()) {
-                if (delivery != null) {
-                    processMessage(delivery, collector);
-                }
+                processMessage(delivery, collector);
                 if (collector.isEndOfStreamSignalled()) {
                     this.running = false;
                     return;
@@ -410,16 +410,10 @@ public class RMQSource<OUT> extends MultipleIdsMessageAcknowledgingSourceBase<OU
                 if (usesCorrelationId) {
                     Preconditions.checkNotNull(
                             correlationId,
-                            "RabbitMQ source was instantiated with usesCorrelationId set to "
-                                    + "true yet we couldn't extract the correlation id from it!");
+                            "RabbitMQ source was instantiated "
+                                    + "with usesCorrelationId set to true yet we couldn't extract the correlation id from it !");
                     if (!addId(correlationId)) {
                         // we have already processed this message
-                        try {
-                            channel.basicReject(deliveryTag, false);
-                        } catch (IOException e) {
-                            throw new RuntimeException(
-                                    "Message could not be acknowledged with basicReject.", e);
-                        }
                         return false;
                     }
                 }

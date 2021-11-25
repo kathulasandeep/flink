@@ -69,7 +69,6 @@ import org.apache.flink.runtime.heartbeat.HeartbeatServices;
 import org.apache.flink.runtime.heartbeat.TestingHeartbeatServices;
 import org.apache.flink.runtime.highavailability.HighAvailabilityServices;
 import org.apache.flink.runtime.highavailability.TestingHighAvailabilityServices;
-import org.apache.flink.runtime.highavailability.nonha.standalone.StandaloneHaServices;
 import org.apache.flink.runtime.instance.SimpleSlotContext;
 import org.apache.flink.runtime.io.network.partition.NoOpJobMasterPartitionTracker;
 import org.apache.flink.runtime.io.network.partition.ResultPartitionID;
@@ -296,13 +295,12 @@ public class JobMasterTest extends TestLogger {
         final SchedulerNGFactory schedulerNGFactory =
                 SchedulerNGFactoryFactory.createSchedulerNGFactory(configuration);
 
-        final JobGraph jobGraph = JobGraphTestUtils.createSingleVertexJobGraph();
         final JobMaster testingJobMaster =
                 new JobMaster(
                         rpcService,
                         jobMasterConfiguration,
                         jmResourceId,
-                        jobGraph,
+                        JobGraphTestUtils.createSingleVertexJobGraph(),
                         haServices,
                         SlotPoolFactory.fromConfiguration(configuration),
                         jobManagerSharedServices,
@@ -335,7 +333,6 @@ public class JobMasterTest extends TestLogger {
                         .registerTaskManager(
                                 testingTaskManagerAddress,
                                 unresolvedTaskManagerLocation,
-                                jobGraph.getJobID(),
                                 testingTimeout)
                         .get(),
                 instanceOf(RegistrationResponse.Success.class));
@@ -351,7 +348,6 @@ public class JobMasterTest extends TestLogger {
                         .registerTaskManager(
                                 testingTaskManagerAddress,
                                 unresolvedTaskManagerLocation,
-                                jobGraph.getJobID(),
                                 testingTimeout)
                         .get(),
                 instanceOf(RegistrationResponse.Success.class));
@@ -503,7 +499,6 @@ public class JobMasterTest extends TestLogger {
                     jobMasterGateway.registerTaskManager(
                             taskExecutorGateway.getAddress(),
                             unresolvedTaskManagerLocation,
-                            jobGraph.getJobID(),
                             testingTimeout);
 
             // wait for the completion of the registration
@@ -567,9 +562,8 @@ public class JobMasterTest extends TestLogger {
         final JobManagerSharedServices jobManagerSharedServices =
                 new TestingJobManagerSharedServicesBuilder().build();
 
-        final JobGraph jobGraph = JobGraphTestUtils.createSingleVertexJobGraph();
         final JobMaster jobMaster =
-                new JobMasterBuilder(jobGraph, rpcService)
+                new JobMasterBuilder(JobGraphTestUtils.createSingleVertexJobGraph(), rpcService)
                         .withHeartbeatServices(new HeartbeatServices(5L, 1000L))
                         .withSlotPoolFactory(new TestingSlotPoolFactory(hasReceivedSlotOffers))
                         .createJobMaster();
@@ -589,7 +583,6 @@ public class JobMasterTest extends TestLogger {
                     jobMasterGateway.registerTaskManager(
                             taskExecutorGateway.getAddress(),
                             unresolvedTaskManagerLocation,
-                            jobGraph.getJobID(),
                             testingTimeout);
 
             // wait for the completion of the registration
@@ -1065,7 +1058,6 @@ public class JobMasterTest extends TestLogger {
                     .registerTaskManager(
                             taskExecutorGateway.getAddress(),
                             taskManagerUnresolvedLocation,
-                            restartingJobGraph.getJobID(),
                             testingTimeout)
                     .get();
 
@@ -1851,11 +1843,7 @@ public class JobMasterTest extends TestLogger {
 
             final Collection<SlotOffer> slotOffers =
                     registerSlotsAtJobMaster(
-                            1,
-                            jobMasterGateway,
-                            producerConsumerJobGraph.getJobID(),
-                            testingTaskExecutorGateway,
-                            taskManagerLocation);
+                            1, jobMasterGateway, testingTaskExecutorGateway, taskManagerLocation);
 
             assertThat(slotOffers, hasSize(1));
 
@@ -2051,11 +2039,7 @@ public class JobMasterTest extends TestLogger {
 
             final Collection<SlotOffer> slotOffers =
                     registerSlotsAtJobMaster(
-                            1,
-                            jobMasterGateway,
-                            jobGraph.getJobID(),
-                            testingTaskExecutorGateway,
-                            taskManagerLocation);
+                            1, jobMasterGateway, testingTaskExecutorGateway, taskManagerLocation);
 
             // check that we accepted the offered slot
             assertThat(slotOffers, hasSize(1));
@@ -2124,7 +2108,6 @@ public class JobMasterTest extends TestLogger {
                     registerSlotsAtJobMaster(
                             1,
                             jobMasterGateway,
-                            jobGraph.getJobID(),
                             testingTaskExecutorGateway,
                             taskManagerUnresolvedLocation);
 
@@ -2273,50 +2256,6 @@ public class JobMasterTest extends TestLogger {
                         });
     }
 
-    /**
-     * Tests that the JobMaster rejects a TaskExecutor registration attempt if the expected and
-     * actual JobID are not equal. See FLINK-21606.
-     */
-    @Test
-    public void testJobMasterRejectsTaskExecutorRegistrationIfJobIdsAreNotEqual() throws Exception {
-        final JobMaster jobMaster = new JobMasterBuilder(jobGraph, rpcService).createJobMaster();
-
-        try {
-            jobMaster.start();
-
-            final CompletableFuture<RegistrationResponse> registrationResponse =
-                    jobMaster.registerTaskManager(
-                            "foobar",
-                            new LocalUnresolvedTaskManagerLocation(),
-                            new JobID(),
-                            testingTimeout);
-
-            assertThat(registrationResponse.get(), instanceOf(JMTMRegistrationRejection.class));
-        } finally {
-            RpcUtils.terminateRpcEndpoint(jobMaster, testingTimeout);
-        }
-    }
-
-    /** Tests that the JobMaster can be restarted multiple times. See FLINK-22597. */
-    @Test
-    public void testMultipleStartsWork() throws Exception {
-        final JobMaster jobMaster =
-                new JobMasterBuilder(jobGraph, rpcService)
-                        .withHighAvailabilityServices(
-                                new StandaloneHaServices("localhost", "localhost", "localhost"))
-                        .createJobMaster();
-
-        try {
-            jobMaster.start(JobMasterId.generate()).join();
-
-            jobMaster.suspend(new FlinkException("Test exception.")).join();
-
-            jobMaster.start(JobMasterId.generate()).join();
-        } finally {
-            RpcUtils.terminateRpcEndpoint(jobMaster, testingTimeout);
-        }
-    }
-
     private void runJobFailureWhenTaskExecutorTerminatesTest(
             HeartbeatServices heartbeatServices,
             BiConsumer<LocalUnresolvedTaskManagerLocation, JobMasterGateway> jobReachedRunningState,
@@ -2363,7 +2302,6 @@ public class JobMasterTest extends TestLogger {
                     registerSlotsAtJobMaster(
                             1,
                             jobMasterGateway,
-                            jobGraph.getJobID(),
                             taskExecutorGateway,
                             taskManagerUnresolvedLocation);
             assertThat(slotOffers, hasSize(1));
@@ -2392,7 +2330,6 @@ public class JobMasterTest extends TestLogger {
     private Collection<SlotOffer> registerSlotsAtJobMaster(
             int numberSlots,
             JobMasterGateway jobMasterGateway,
-            JobID jobId,
             TaskExecutorGateway taskExecutorGateway,
             UnresolvedTaskManagerLocation unresolvedTaskManagerLocation)
             throws ExecutionException, InterruptedException {
@@ -2402,7 +2339,6 @@ public class JobMasterTest extends TestLogger {
                 .registerTaskManager(
                         taskExecutorGateway.getAddress(),
                         unresolvedTaskManagerLocation,
-                        jobId,
                         testingTimeout)
                 .get();
 

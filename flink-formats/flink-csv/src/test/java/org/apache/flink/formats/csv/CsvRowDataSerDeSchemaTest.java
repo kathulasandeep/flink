@@ -207,12 +207,6 @@ public class CsvRowDataSerDeSchemaTest {
     }
 
     @Test
-    public void testDeserializeNullRow() throws Exception {
-        // return null for null input
-        assertNull(testDeserialization(false, false, null));
-    }
-
-    @Test
     public void testDeserializeIncompleteRow() throws Exception {
         // last two columns are missing
         assertEquals(Row.of("Test", null, null), testDeserialization(true, false, "Test"));
@@ -298,15 +292,6 @@ public class CsvRowDataSerDeSchemaTest {
         RowData nullRow =
                 GenericRowData.of(null, rowData("world", 2, "This is 2nd top column after null"));
         testSerDeConsistency(nullRow, serSchemaBuilder, deserSchemaBuilder);
-    }
-
-    @Test
-    public void testDeserializationWithDisableQuoteCharacter() throws Exception {
-        Consumer<CsvRowDataDeserializationSchema.Builder> deserConfig =
-                (deserSchemaBuilder) ->
-                        deserSchemaBuilder.disableQuoteCharacter().setFieldDelimiter(',');
-
-        testFieldDeserialization(STRING(), "\"abc", "\"abc", deserConfig, ",");
     }
 
     private void testNullableField(DataType fieldType, String string, Object value)
@@ -419,7 +404,7 @@ public class CsvRowDataSerDeSchemaTest {
                 InstantiationUtil.deserializeObject(
                         InstantiationUtil.serializeObject(deserSchemaBuilder.build()),
                         CsvRowDeSerializationSchemaTest.class.getClassLoader());
-        return schema.deserialize(csv != null ? csv.getBytes() : null);
+        return schema.deserialize(csv.getBytes());
     }
 
     private static RowData rowData(String str1, int integer, String str2) {

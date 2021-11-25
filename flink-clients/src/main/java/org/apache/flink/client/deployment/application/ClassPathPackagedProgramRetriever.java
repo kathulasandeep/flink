@@ -24,7 +24,6 @@ import org.apache.flink.client.program.PackagedProgram;
 import org.apache.flink.client.program.PackagedProgramRetriever;
 import org.apache.flink.client.program.PackagedProgramUtils;
 import org.apache.flink.client.program.ProgramInvocationException;
-import org.apache.flink.configuration.Configuration;
 import org.apache.flink.util.ExceptionUtils;
 import org.apache.flink.util.FileUtils;
 import org.apache.flink.util.FlinkException;
@@ -77,15 +76,12 @@ public class ClassPathPackagedProgramRetriever implements PackagedProgramRetriev
 
     @Nullable private final File jarFile;
 
-    @Nonnull private final Configuration configuration;
-
     private ClassPathPackagedProgramRetriever(
             @Nonnull String[] programArguments,
             @Nullable String jobClassName,
             @Nonnull Supplier<Iterable<File>> jarsOnClassPath,
             @Nullable File userLibDirectory,
-            @Nullable File jarFile,
-            @Nonnull Configuration configuration)
+            @Nullable File jarFile)
             throws IOException {
         this.userLibDirectory = userLibDirectory;
         this.programArguments = requireNonNull(programArguments, "programArguments");
@@ -93,7 +89,6 @@ public class ClassPathPackagedProgramRetriever implements PackagedProgramRetriev
         this.jarsOnClassPath = requireNonNull(jarsOnClassPath);
         this.userClassPaths = discoverUserClassPaths(userLibDirectory);
         this.jarFile = jarFile;
-        this.configuration = configuration;
     }
 
     private Collection<URL> discoverUserClassPaths(@Nullable File jobDir) throws IOException {
@@ -134,7 +129,6 @@ public class ClassPathPackagedProgramRetriever implements PackagedProgramRetriev
                         .setArguments(programArguments)
                         .setJarFile(jarFile)
                         .setEntryPointClassName(jobClassName)
-                        .setConfiguration(configuration)
                         .build();
             }
 
@@ -143,7 +137,6 @@ public class ClassPathPackagedProgramRetriever implements PackagedProgramRetriev
                     .setUserClassPaths(new ArrayList<>(userClassPaths))
                     .setEntryPointClassName(entryClass)
                     .setArguments(programArguments)
-                    .setConfiguration(configuration)
                     .build();
         } catch (ProgramInvocationException e) {
             throw new FlinkException("Could not load the provided entrypoint class.", e);
@@ -259,11 +252,8 @@ public class ClassPathPackagedProgramRetriever implements PackagedProgramRetriev
 
         private File jarFile;
 
-        private final Configuration configuration;
-
-        private Builder(String[] programArguments, Configuration configuration) {
+        private Builder(String[] programArguments) {
             this.programArguments = requireNonNull(programArguments);
-            this.configuration = requireNonNull(configuration);
         }
 
         public Builder setJobClassName(@Nullable String jobClassName) {
@@ -288,16 +278,11 @@ public class ClassPathPackagedProgramRetriever implements PackagedProgramRetriev
 
         public ClassPathPackagedProgramRetriever build() throws IOException {
             return new ClassPathPackagedProgramRetriever(
-                    programArguments,
-                    jobClassName,
-                    jarsOnClassPath,
-                    userLibDirectory,
-                    jarFile,
-                    configuration);
+                    programArguments, jobClassName, jarsOnClassPath, userLibDirectory, jarFile);
         }
     }
 
-    public static Builder newBuilder(String[] programArguments, Configuration configuration) {
-        return new Builder(programArguments, configuration);
+    public static Builder newBuilder(String[] programArguments) {
+        return new Builder(programArguments);
     }
 }

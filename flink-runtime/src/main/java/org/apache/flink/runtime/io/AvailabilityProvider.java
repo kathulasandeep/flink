@@ -147,13 +147,5 @@ public interface AvailabilityProvider {
         public CompletableFuture<?> getAvailableFuture() {
             return availableFuture;
         }
-
-        @Override
-        public String toString() {
-            if (availableFuture == AVAILABLE) {
-                return "AVAILABLE";
-            }
-            return availableFuture.toString();
-        }
     }
 }

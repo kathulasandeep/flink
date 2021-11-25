@@ -127,10 +127,7 @@ public class AvroDeserializationSchema<T> implements DeserializationSchema<T> {
     }
 
     @Override
-    public T deserialize(@Nullable byte[] message) throws IOException {
-        if (message == null) {
-            return null;
-        }
+    public T deserialize(byte[] message) throws IOException {
         // read record
         checkAvroInitialized();
         inputStream.setBuffer(message);

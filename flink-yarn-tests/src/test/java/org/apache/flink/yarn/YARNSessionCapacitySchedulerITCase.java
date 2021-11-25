@@ -628,8 +628,7 @@ public class YARNSessionCapacitySchedulerITCase extends YarnTestBase {
         // find out the application id and wait until it has finished.
         try {
             List<ApplicationReport> apps =
-                    getApplicationReportWithRetryOnNPE(
-                            yc, EnumSet.of(YarnApplicationState.RUNNING));
+                    yc.getApplications(EnumSet.of(YarnApplicationState.RUNNING));
 
             ApplicationId tmpAppId;
             if (apps.size() == 1) {
@@ -640,15 +639,12 @@ public class YARNSessionCapacitySchedulerITCase extends YarnTestBase {
 
                 LOG.info("waiting for the job with appId {} to finish", tmpAppId);
                 // wait until the app has finished
-                while (getApplicationReportWithRetryOnNPE(
-                                        yc, EnumSet.of(YarnApplicationState.RUNNING))
-                                .size()
-                        > 0) {
+                while (yc.getApplications(EnumSet.of(YarnApplicationState.RUNNING)).size() > 0) {
                     sleep(500);
                 }
             } else {
                 // get appId by finding the latest finished appid
-                apps = getApplicationReportWithRetryOnNPE(yc);
+                apps = yc.getApplications();
                 Collections.sort(
                         apps,
                         new Comparator<ApplicationReport>() {

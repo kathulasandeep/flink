@@ -39,19 +39,14 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
 /** The connection between a TaskExecutor and the ResourceManager. */
 public class TaskExecutorToResourceManagerConnection
         extends RegisteredRpcConnection<
-                ResourceManagerId,
-                ResourceManagerGateway,
-                TaskExecutorRegistrationSuccess,
-                TaskExecutorRegistrationRejection> {
+                ResourceManagerId, ResourceManagerGateway, TaskExecutorRegistrationSuccess> {
 
     private final RpcService rpcService;
 
     private final RetryingRegistrationConfiguration retryingRegistrationConfiguration;
 
     private final RegistrationConnectionListener<
-                    TaskExecutorToResourceManagerConnection,
-                    TaskExecutorRegistrationSuccess,
-                    TaskExecutorRegistrationRejection>
+                    TaskExecutorToResourceManagerConnection, TaskExecutorRegistrationSuccess>
             registrationListener;
 
     private final TaskExecutorRegistration taskExecutorRegistration;
@@ -65,8 +60,7 @@ public class TaskExecutorToResourceManagerConnection
             Executor executor,
             RegistrationConnectionListener<
                             TaskExecutorToResourceManagerConnection,
-                            TaskExecutorRegistrationSuccess,
-                            TaskExecutorRegistrationRejection>
+                            TaskExecutorRegistrationSuccess>
                     registrationListener,
             TaskExecutorRegistration taskExecutorRegistration) {
 
@@ -80,10 +74,7 @@ public class TaskExecutorToResourceManagerConnection
 
     @Override
     protected RetryingRegistration<
-                    ResourceManagerId,
-                    ResourceManagerGateway,
-                    TaskExecutorRegistrationSuccess,
-                    TaskExecutorRegistrationRejection>
+                    ResourceManagerId, ResourceManagerGateway, TaskExecutorRegistrationSuccess>
             generateRegistration() {
         return new TaskExecutorToResourceManagerConnection.ResourceManagerRegistration(
                 log,
@@ -105,11 +96,6 @@ public class TaskExecutorToResourceManagerConnection
     }
 
     @Override
-    protected void onRegistrationRejection(TaskExecutorRegistrationRejection rejection) {
-        registrationListener.onRegistrationRejection(getTargetAddress(), rejection);
-    }
-
-    @Override
     protected void onRegistrationFailure(Throwable failure) {
         log.info("Failed to register at resource manager {}.", getTargetAddress(), failure);
 
@@ -122,10 +108,7 @@ public class TaskExecutorToResourceManagerConnection
 
     private static class ResourceManagerRegistration
             extends RetryingRegistration<
-                    ResourceManagerId,
-                    ResourceManagerGateway,
-                    TaskExecutorRegistrationSuccess,
-                    TaskExecutorRegistrationRejection> {
+                    ResourceManagerId, ResourceManagerGateway, TaskExecutorRegistrationSuccess> {
 
         private final TaskExecutorRegistration taskExecutorRegistration;
 

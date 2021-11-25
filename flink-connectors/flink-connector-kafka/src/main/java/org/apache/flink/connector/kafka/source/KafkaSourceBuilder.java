@@ -21,7 +21,6 @@ package org.apache.flink.connector.kafka.source;
 import org.apache.flink.api.connector.source.Boundedness;
 import org.apache.flink.connector.kafka.source.enumerator.initializer.NoStoppingOffsetsInitializer;
 import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
-import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializerValidator;
 import org.apache.flink.connector.kafka.source.enumerator.subscriber.KafkaSubscriber;
 import org.apache.flink.connector.kafka.source.reader.deserializer.KafkaRecordDeserializer;
 
@@ -41,7 +40,6 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 import static org.apache.flink.util.Preconditions.checkNotNull;
-import static org.apache.flink.util.Preconditions.checkState;
 
 /**
  * The @builder class for {@link KafkaSource} to make it easier for the users to construct a {@link
@@ -54,13 +52,14 @@ import static org.apache.flink.util.Preconditions.checkState;
  * KafkaSource<String> source = KafkaSource
  *     .<String>builder()
  *     .setBootstrapServers(MY_BOOTSTRAP_SERVERS)
+ *     .setGroupId("myGroup")
  *     .setTopics(Arrays.asList(TOPIC1, TOPIC2))
  *     .setDeserializer(KafkaRecordDeserializer.valueOnly(StringDeserializer.class))
  *     .build();
  * }</pre>
  *
- * <p>The bootstrap servers, topics/partitions to consume, and the record deserializer are required
- * fields that must be set.
+ * <p>The bootstrap servers, group id, topics/partitions to consume, and the record deserializer are
+ * required fields that must be set.
  *
  * <p>To specify the starting offsets of the KafkaSource, one can call {@link
  * #setStartingOffsets(OffsetsInitializer)}.
@@ -75,6 +74,7 @@ import static org.apache.flink.util.Preconditions.checkState;
  * KafkaSource<String> source = KafkaSource
  *     .<String>builder()
  *     .setBootstrapServers(MY_BOOTSTRAP_SERVERS)
+ *     .setGroupId("myGroup")
  *     .setTopics(Arrays.asList(TOPIC1, TOPIC2))
  *     .setDeserializer(KafkaRecordDeserializer.valueOnly(StringDeserializer.class))
  *     .setUnbounded(OffsetsInitializer.latest())
@@ -86,7 +86,9 @@ import static org.apache.flink.util.Preconditions.checkState;
  */
 public class KafkaSourceBuilder<OUT> {
     private static final Logger LOG = LoggerFactory.getLogger(KafkaSourceBuilder.class);
-    private static final String[] REQUIRED_CONFIGS = {ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG};
+    private static final String[] REQUIRED_CONFIGS = {
+        ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, ConsumerConfig.GROUP_ID_CONFIG
+    };
     // The subscriber specifies the partitions to subscribe to.
     private KafkaSubscriber subscriber;
     // Users can specify the starting / stopping offset initializer.
@@ -414,31 +416,27 @@ public class KafkaSourceBuilder<OUT> {
                 ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,
                 ByteArrayDeserializer.class.getName(),
                 true);
-        if (!props.containsKey(ConsumerConfig.GROUP_ID_CONFIG)) {
-            LOG.warn(
-                    "Offset commit on checkpoint is disabled because {} is not specified",
-                    ConsumerConfig.GROUP_ID_CONFIG);
-            maybeOverride(KafkaSourceOptions.COMMIT_OFFSETS_ON_CHECKPOINT.key(), "false", false);
-        }
-        maybeOverride(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false", false);
+        maybeOverride(
+                ConsumerConfig.GROUP_ID_CONFIG, "KafkaSource-" + new Random().nextLong(), false);
         maybeOverride(
                 ConsumerConfig.AUTO_OFFSET_RESET_CONFIG,
                 startingOffsetsInitializer.getAutoOffsetResetStrategy().name().toLowerCase(),
                 true);
 
         // If the source is bounded, do not run periodic partition discovery.
-        maybeOverride(
+        if (maybeOverride(
                 KafkaSourceOptions.PARTITION_DISCOVERY_INTERVAL_MS.key(),
                 "-1",
-                boundedness == Boundedness.BOUNDED);
+                boundedness == Boundedness.BOUNDED)) {
+            LOG.warn(
+                    "{} property is overridden to -1 because the source is bounded.",
+                    KafkaSourceOptions.PARTITION_DISCOVERY_INTERVAL_MS);
+        }
 
-        // If the client id prefix is not set, reuse the consumer group id as the client id prefix,
-        // or generate a random string if consumer group id is not specified.
+        // If the client id prefix is not set, reuse the consumer group id as the client id prefix.
         maybeOverride(
                 KafkaSourceOptions.CLIENT_ID_PREFIX.key(),
-                props.containsKey(ConsumerConfig.GROUP_ID_CONFIG)
-                        ? props.getProperty(ConsumerConfig.GROUP_ID_CONFIG)
-                        : "KafkaSource-" + new Random().nextLong(),
+                props.getProperty(ConsumerConfig.GROUP_ID_CONFIG),
                 false);
     }
 
@@ -464,8 +462,10 @@ public class KafkaSourceBuilder<OUT> {
         // Check required configs.
         for (String requiredConfig : REQUIRED_CONFIGS) {
             checkNotNull(
-                    props.getProperty(requiredConfig),
-                    String.format("Property %s is required but not provided", requiredConfig));
+                    props.getProperty(
+                            requiredConfig,
+                            String.format(
+                                    "Property %s is required but not provided", requiredConfig)));
         }
         // Check required settings.
         checkNotNull(
@@ -473,31 +473,5 @@ public class KafkaSourceBuilder<OUT> {
                 "No subscribe mode is specified, "
                         + "should be one of topics, topic pattern and partition set.");
         checkNotNull(deserializationSchema, "Deserialization schema is required but not provided.");
-        // Check consumer group ID
-        checkState(
-                props.containsKey(ConsumerConfig.GROUP_ID_CONFIG) || !offsetCommitEnabledManually(),
-                String.format(
-                        "Property %s is required when offset commit is enabled",
-                        ConsumerConfig.GROUP_ID_CONFIG));
-        // Check offsets initializers
-        if (startingOffsetsInitializer instanceof OffsetsInitializerValidator) {
-            ((OffsetsInitializerValidator) startingOffsetsInitializer).validate(props);
-        }
-        if (stoppingOffsetsInitializer instanceof OffsetsInitializerValidator) {
-            ((OffsetsInitializerValidator) stoppingOffsetsInitializer).validate(props);
-        }
-    }
-
-    private boolean offsetCommitEnabledManually() {
-        boolean autoCommit =
-                props.containsKey(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG)
-                        && Boolean.parseBoolean(
-                                props.getProperty(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG));
-        boolean commitOnCheckpoint =
-                props.containsKey(KafkaSourceOptions.COMMIT_OFFSETS_ON_CHECKPOINT.key())
-                        && Boolean.parseBoolean(
-                                props.getProperty(
-                                        KafkaSourceOptions.COMMIT_OFFSETS_ON_CHECKPOINT.key()));
-        return autoCommit || commitOnCheckpoint;
     }
 }

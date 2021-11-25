@@ -27,13 +27,11 @@ import org.apache.flink.runtime.jobmaster.TestingJobManagerRunner;
 import org.apache.flink.runtime.jobmaster.factories.JobManagerJobMetricGroupFactory;
 import org.apache.flink.runtime.rpc.FatalErrorHandler;
 import org.apache.flink.runtime.rpc.RpcService;
-import org.apache.flink.util.Preconditions;
 
 import javax.annotation.Nonnull;
 
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Testing implementation of {@link JobManagerRunnerFactory} which returns a {@link
@@ -44,14 +42,14 @@ public class TestingJobManagerRunnerFactory implements JobManagerRunnerFactory {
     private final BlockingQueue<TestingJobManagerRunner> createdJobManagerRunner =
             new ArrayBlockingQueue<>(16);
 
-    private final AtomicInteger numBlockingJobManagerRunners;
+    private int numBlockingJobManagerRunners;
 
     public TestingJobManagerRunnerFactory() {
         this(0);
     }
 
     public TestingJobManagerRunnerFactory(int numBlockingJobManagerRunners) {
-        this.numBlockingJobManagerRunners = new AtomicInteger(numBlockingJobManagerRunners);
+        this.numBlockingJobManagerRunners = numBlockingJobManagerRunners;
     }
 
     @Override
@@ -68,15 +66,22 @@ public class TestingJobManagerRunnerFactory implements JobManagerRunnerFactory {
             throws Exception {
         final TestingJobManagerRunner testingJobManagerRunner =
                 createTestingJobManagerRunner(jobGraph);
-        Preconditions.checkState(
-                createdJobManagerRunner.offer(testingJobManagerRunner),
-                "Unable to persist created the new runner.");
+        createdJobManagerRunner.offer(testingJobManagerRunner);
+
         return testingJobManagerRunner;
     }
 
     @Nonnull
     private TestingJobManagerRunner createTestingJobManagerRunner(JobGraph jobGraph) {
-        final boolean blockingTermination = numBlockingJobManagerRunners.getAndDecrement() > 0;
+        final boolean blockingTermination;
+
+        if (numBlockingJobManagerRunners > 0) {
+            numBlockingJobManagerRunners--;
+            blockingTermination = true;
+        } else {
+            blockingTermination = false;
+        }
+
         return new TestingJobManagerRunner.Builder()
                 .setJobId(jobGraph.getJobID())
                 .setBlockingTermination(blockingTermination)

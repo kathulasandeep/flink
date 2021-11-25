@@ -28,7 +28,6 @@ import org.apache.flink.streaming.connectors.kinesis.serialization.KinesisDeseri
 
 import org.mockito.invocation.InvocationOnMock;
 
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
@@ -50,7 +49,6 @@ public class TestableKinesisDataFetcher<T> extends KinesisDataFetcher<T> {
     private final OneShotLatch shutdownWaiter;
 
     private volatile boolean running;
-    private volatile boolean executorServiceShutdownNowCalled;
 
     public TestableKinesisDataFetcher(
             List<String> fakeStreams,
@@ -130,22 +128,14 @@ public class TestableKinesisDataFetcher<T> extends KinesisDataFetcher<T> {
     @Override
     protected ExecutorService createShardConsumersThreadPool(String subtaskName) {
         // this is just a dummy fetcher, so no need to create a thread pool for shard consumers
-        ExecutorService mockExecutorService = mock(ExecutorService.class);
-        when(mockExecutorService.isTerminated())
-                .thenAnswer((InvocationOnMock invocation) -> !running);
-        when(mockExecutorService.shutdownNow())
-                .thenAnswer(
-                        invocationOnMock -> {
-                            executorServiceShutdownNowCalled = true;
-                            return Collections.emptyList();
-                        });
+        ExecutorService mockExecutor = mock(ExecutorService.class);
+        when(mockExecutor.isTerminated()).thenAnswer((InvocationOnMock invocation) -> !running);
         try {
-            when(mockExecutorService.awaitTermination(anyLong(), any()))
-                    .thenAnswer(invocationOnMock -> !running && executorServiceShutdownNowCalled);
+            when(mockExecutor.awaitTermination(anyLong(), any())).thenReturn(!running);
         } catch (InterruptedException e) {
             // We're just trying to stub the method. Must acknowledge the checked exception.
         }
-        return mockExecutorService;
+        return mockExecutor;
     }
 
     @Override

@@ -46,7 +46,6 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
-import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -85,6 +84,8 @@ public class SourceCoordinator<SplitT extends SourceSplit, EnumChkT>
     private final Source<?, SplitT, EnumChkT> source;
     /** The serializer that handles the serde of the SplitEnumerator checkpoints. */
     private final SimpleVersionedSerializer<EnumChkT> enumCheckpointSerializer;
+    /** The serializer for the SourceSplit of the associated Source. */
+    private final SimpleVersionedSerializer<SplitT> splitSerializer;
     /** The context containing the states of the coordinator. */
     private final SourceCoordinatorContext<SplitT> context;
     /**
@@ -104,6 +105,7 @@ public class SourceCoordinator<SplitT extends SourceSplit, EnumChkT>
         this.coordinatorExecutor = coordinatorExecutor;
         this.source = source;
         this.enumCheckpointSerializer = source.getEnumeratorCheckpointSerializer();
+        this.splitSerializer = source.getSplitSerializer();
         this.context = context;
     }
 
@@ -186,7 +188,6 @@ public class SourceCoordinator<SplitT extends SourceSplit, EnumChkT>
                             subtaskId,
                             operatorName);
                     context.unregisterSourceReader(subtaskId);
-                    context.subtaskNotReady(subtaskId);
                 },
                 "handling subtask %d failure",
                 subtaskId);
@@ -216,16 +217,6 @@ public class SourceCoordinator<SplitT extends SourceSplit, EnumChkT>
     }
 
     @Override
-    public void subtaskReady(int subtask, SubtaskGateway gateway) {
-        assert subtask == gateway.getSubtask();
-
-        runInEventLoop(
-                () -> context.subtaskReady(gateway),
-                "making event gateway to subtask %d available",
-                subtask);
-    }
-
-    @Override
     public void checkpointCoordinator(long checkpointId, CompletableFuture<byte[]> result) {
         runInEventLoop(
                 () -> {
@@ -234,8 +225,7 @@ public class SourceCoordinator<SplitT extends SourceSplit, EnumChkT>
                             operatorName,
                             checkpointId);
                     try {
-                        context.onCheckpoint(checkpointId);
-                        result.complete(toBytes());
+                        result.complete(toBytes(checkpointId));
                     } catch (Throwable e) {
                         ExceptionUtils.rethrowIfFatalErrorOrOOM(e);
                         result.completeExceptionally(
@@ -298,7 +288,8 @@ public class SourceCoordinator<SplitT extends SourceSplit, EnumChkT>
                 context.getCoordinatorContext().getUserCodeClassloader();
         try (TemporaryClassLoaderContext ignored =
                 TemporaryClassLoaderContext.of(userCodeClassLoader)) {
-            final EnumChkT enumeratorCheckpoint = deserializeCheckpoint(checkpointData);
+            final EnumChkT enumeratorCheckpoint =
+                    deserializeCheckpointAndRestoreContext(checkpointData);
             enumerator = source.restoreEnumerator(context, enumeratorCheckpoint);
         }
     }
@@ -352,24 +343,32 @@ public class SourceCoordinator<SplitT extends SourceSplit, EnumChkT>
      * @return A byte array containing the serialized state of the source coordinator.
      * @throws Exception When something goes wrong in serialization.
      */
-    private byte[] toBytes() throws Exception {
-        return writeCheckpointBytes(enumerator.snapshotState(), enumCheckpointSerializer);
+    private byte[] toBytes(long checkpointId) throws Exception {
+        return writeCheckpointBytes(
+                checkpointId,
+                enumerator.snapshotState(),
+                context,
+                enumCheckpointSerializer,
+                splitSerializer);
     }
 
-    static <EnumChkT> byte[] writeCheckpointBytes(
+    static <SplitT extends SourceSplit, EnumChkT> byte[] writeCheckpointBytes(
+            final long checkpointId,
             final EnumChkT enumeratorCheckpoint,
-            final SimpleVersionedSerializer<EnumChkT> enumeratorCheckpointSerializer)
+            final SourceCoordinatorContext<SplitT> coordinatorContext,
+            final SimpleVersionedSerializer<EnumChkT> checkpointSerializer,
+            final SimpleVersionedSerializer<SplitT> splitSerializer)
             throws Exception {
 
         try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
                 DataOutputStream out = new DataOutputViewStreamWrapper(baos)) {
 
             writeCoordinatorSerdeVersion(out);
-            out.writeInt(enumeratorCheckpointSerializer.getVersion());
-            byte[] serialziedEnumChkpt =
-                    enumeratorCheckpointSerializer.serialize(enumeratorCheckpoint);
+            out.writeInt(checkpointSerializer.getVersion());
+            byte[] serialziedEnumChkpt = checkpointSerializer.serialize(enumeratorCheckpoint);
             out.writeInt(serialziedEnumChkpt.length);
             out.write(serialziedEnumChkpt);
+            coordinatorContext.snapshotState(checkpointId, splitSerializer, out);
             out.flush();
             return baos.toByteArray();
         }
@@ -378,22 +377,17 @@ public class SourceCoordinator<SplitT extends SourceSplit, EnumChkT>
     /**
      * Restore the state of this source coordinator from the state bytes.
      *
-     * @param bytes The checkpoint bytes that was returned from {@link #toBytes()}
+     * @param bytes The checkpoint bytes that was returned from {@link #toBytes(long)}
      * @throws Exception When the deserialization failed.
      */
-    private EnumChkT deserializeCheckpoint(byte[] bytes) throws Exception {
+    private EnumChkT deserializeCheckpointAndRestoreContext(byte[] bytes) throws Exception {
         try (ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
                 DataInputStream in = new DataInputViewStreamWrapper(bais)) {
-            final int coordinatorSerdeVersion = readAndVerifyCoordinatorSerdeVersion(in);
+            readAndVerifyCoordinatorSerdeVersion(in);
             int enumSerializerVersion = in.readInt();
             int serializedEnumChkptSize = in.readInt();
             byte[] serializedEnumChkpt = readBytes(in, serializedEnumChkptSize);
-
-            if (coordinatorSerdeVersion != SourceCoordinatorSerdeUtils.VERSION_0
-                    && bais.available() > 0) {
-                throw new IOException("Unexpected trailing bytes in enumerator checkpoint data");
-            }
-
+            context.restoreState(splitSerializer, in);
             return enumCheckpointSerializer.deserialize(enumSerializerVersion, serializedEnumChkpt);
         }
     }

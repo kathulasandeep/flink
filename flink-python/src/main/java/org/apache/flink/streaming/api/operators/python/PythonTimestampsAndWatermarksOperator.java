@@ -173,10 +173,8 @@ public class PythonTimestampsAndWatermarksOperator<IN>
     }
 
     @Override
-    public void processWatermark(org.apache.flink.streaming.api.watermark.Watermark mark)
-            throws Exception {
+    public void processWatermark(org.apache.flink.streaming.api.watermark.Watermark mark) {
         if (mark.getTimestamp() == Long.MAX_VALUE) {
-            invokeFinishBundle();
             watermarkOutput.emitWatermark(Watermark.MAX_WATERMARK);
         }
     }

@@ -410,13 +410,16 @@ public abstract class RpcEndpoint implements RpcGateway, AutoCloseableAsync {
             this.mainThreadCheck = Preconditions.checkNotNull(mainThreadCheck);
         }
 
-        private void scheduleRunAsync(Runnable runnable, long delayMillis) {
+        public void runAsync(Runnable runnable) {
+            gateway.runAsync(runnable);
+        }
+
+        public void scheduleRunAsync(Runnable runnable, long delayMillis) {
             gateway.scheduleRunAsync(runnable, delayMillis);
         }
 
-        @Override
         public void execute(@Nonnull Runnable command) {
-            gateway.runAsync(command);
+            runAsync(command);
         }
 
         @Override
@@ -432,7 +435,7 @@ public abstract class RpcEndpoint implements RpcGateway, AutoCloseableAsync {
             final long delayMillis = TimeUnit.MILLISECONDS.convert(delay, unit);
             FutureTask<V> ft = new FutureTask<>(callable);
             scheduleRunAsync(ft, delayMillis);
-            return new ScheduledFutureAdapter<>(ft, delayMillis, TimeUnit.MILLISECONDS);
+            return new ScheduledFutureAdapter<>(ft, delay, TimeUnit.MILLISECONDS);
         }
 
         @Override

@@ -66,12 +66,6 @@ public class CheckpointBarrier extends RuntimeEvent {
         return checkpointOptions;
     }
 
-    public CheckpointBarrier withOptions(CheckpointOptions checkpointOptions) {
-        return this.checkpointOptions == checkpointOptions
-                ? this
-                : new CheckpointBarrier(id, timestamp, checkpointOptions);
-    }
-
     // ------------------------------------------------------------------------
     // Serialization
     // ------------------------------------------------------------------------

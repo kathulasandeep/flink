@@ -18,6 +18,7 @@
 
 package org.apache.flink.runtime.registration;
 
+import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.runtime.rpc.RpcGateway;
 
 import org.slf4j.Logger;
@@ -43,13 +44,9 @@ import static org.apache.flink.util.Preconditions.checkState;
  * @param <F> The type of the fencing token
  * @param <G> The type of the gateway to connect to.
  * @param <S> The type of the successful registration responses.
- * @param <R> The type of the registration rejection responses.
  */
 public abstract class RegisteredRpcConnection<
-        F extends Serializable,
-        G extends RpcGateway,
-        S extends RegistrationResponse.Success,
-        R extends RegistrationResponse.Rejection> {
+        F extends Serializable, G extends RpcGateway, S extends RegistrationResponse.Success> {
 
     private static final AtomicReferenceFieldUpdater<RegisteredRpcConnection, RetryingRegistration>
             REGISTRATION_UPDATER =
@@ -74,7 +71,7 @@ public abstract class RegisteredRpcConnection<
     private final Executor executor;
 
     /** The Registration of this RPC connection. */
-    private volatile RetryingRegistration<F, G, S, R> pendingRegistration;
+    private volatile RetryingRegistration<F, G, S> pendingRegistration;
 
     /** The gateway to register, it's null until the registration is completed. */
     private volatile G targetGateway;
@@ -102,7 +99,7 @@ public abstract class RegisteredRpcConnection<
                 !isConnected() && pendingRegistration == null,
                 "The RPC connection is already started");
 
-        final RetryingRegistration<F, G, S, R> newRegistration = createNewRegistration();
+        final RetryingRegistration<F, G, S> newRegistration = createNewRegistration();
 
         if (REGISTRATION_UPDATER.compareAndSet(this, null, newRegistration)) {
             newRegistration.startRegistration();
@@ -125,13 +122,13 @@ public abstract class RegisteredRpcConnection<
         if (closed) {
             return false;
         } else {
-            final RetryingRegistration<F, G, S, R> currentPendingRegistration = pendingRegistration;
+            final RetryingRegistration<F, G, S> currentPendingRegistration = pendingRegistration;
 
             if (currentPendingRegistration != null) {
                 currentPendingRegistration.cancel();
             }
 
-            final RetryingRegistration<F, G, S, R> newRegistration = createNewRegistration();
+            final RetryingRegistration<F, G, S> newRegistration = createNewRegistration();
 
             if (REGISTRATION_UPDATER.compareAndSet(
                     this, currentPendingRegistration, newRegistration)) {
@@ -157,17 +154,10 @@ public abstract class RegisteredRpcConnection<
      * This method generate a specific Registration, for example TaskExecutor Registration at the
      * ResourceManager.
      */
-    protected abstract RetryingRegistration<F, G, S, R> generateRegistration();
+    protected abstract RetryingRegistration<F, G, S> generateRegistration();
 
     /** This method handle the Registration Response. */
     protected abstract void onRegistrationSuccess(S success);
-
-    /**
-     * This method handles the Registration rejection.
-     *
-     * @param rejection rejection containing additional information about the rejection
-     */
-    protected abstract void onRegistrationRejection(R rejection);
 
     /** This method handle the Registration failure. */
     protected abstract void onRegistrationFailure(Throwable failure);
@@ -239,15 +229,13 @@ public abstract class RegisteredRpcConnection<
     //  Internal methods
     // ------------------------------------------------------------------------
 
-    private RetryingRegistration<F, G, S, R> createNewRegistration() {
-        RetryingRegistration<F, G, S, R> newRegistration = checkNotNull(generateRegistration());
+    private RetryingRegistration<F, G, S> createNewRegistration() {
+        RetryingRegistration<F, G, S> newRegistration = checkNotNull(generateRegistration());
 
-        CompletableFuture<RetryingRegistration.RetryingRegistrationResult<G, S, R>> future =
-                newRegistration.getFuture();
+        CompletableFuture<Tuple2<G, S>> future = newRegistration.getFuture();
 
         future.whenCompleteAsync(
-                (RetryingRegistration.RetryingRegistrationResult<G, S, R> result,
-                        Throwable failure) -> {
+                (Tuple2<G, S> result, Throwable failure) -> {
                     if (failure != null) {
                         if (failure instanceof CancellationException) {
                             // we ignore cancellation exceptions because they originate from
@@ -262,16 +250,8 @@ public abstract class RegisteredRpcConnection<
                             onRegistrationFailure(failure);
                         }
                     } else {
-                        if (result.isSuccess()) {
-                            targetGateway = result.getGateway();
-                            onRegistrationSuccess(result.getSuccess());
-                        } else if (result.isRejection()) {
-                            onRegistrationRejection(result.getRejection());
-                        } else {
-                            throw new IllegalArgumentException(
-                                    String.format(
-                                            "Unknown retrying registration response: %s.", result));
-                        }
+                        targetGateway = result.f0;
+                        onRegistrationSuccess(result.f1);
                     }
                 },
                 executor);

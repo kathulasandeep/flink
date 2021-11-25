@@ -18,7 +18,6 @@
 
 package org.apache.flink.connector.kafka.source;
 
-import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.connector.source.Boundedness;
 import org.apache.flink.api.connector.source.Source;
@@ -154,7 +153,7 @@ public class KafkaSource<OUT>
                 stoppingOffsetsInitializer,
                 props,
                 enumContext,
-                checkpoint.assignedPartitions());
+                checkpoint.getCurrentAssignment());
     }
 
     @Override
@@ -178,10 +177,5 @@ public class KafkaSource<OUT>
         Configuration config = new Configuration();
         props.stringPropertyNames().forEach(key -> config.setString(key, props.getProperty(key)));
         return config;
-    }
-
-    @VisibleForTesting
-    Configuration getConfiguration() {
-        return toConfiguration(props);
     }
 }

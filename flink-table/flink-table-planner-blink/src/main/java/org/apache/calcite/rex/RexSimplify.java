@@ -68,14 +68,9 @@ import static org.apache.calcite.rex.RexUnknownAs.UNKNOWN;
 /**
  * Context required to simplify a row-expression.
  *
- * <p>Copied to fix Calcite 1.26 bugs, should be removed for the next Calcite upgrade.
+ * <p>Copied to fix CALCITE-4364, should be removed for the next Calcite upgrade.
  *
- * <p>Changes (line numbers are from the original RexSimplify file):
- *
- * <ol>
- *   <li>CALCITE-4364 & FLINK-19811: Line 1307, Line 1764, Line 2638 ~ Line 2656.
- *   <li>CALCITE-4446 & FLINK-22015: Line 2542 ~ Line 2548, Line 2614 ~ Line 2619.
- * </ol>
+ * <p>Changes: Line 1307, Line 1764, Line 2638 ~ Line 2656.
  */
 public class RexSimplify {
     private final boolean paranoid;
@@ -2674,9 +2669,13 @@ public class RexSimplify {
                             ((RexCall) e).operands.get(1),
                             e.getKind(),
                             newTerms);
-                    // CHANGED: we remove IS_NULL here
-                    // because SEARCH operator in Calcite 1.26 handles UNKNOWNs incorrectly
-                    // see CALCITE-4446
+                case IS_NULL:
+                    if (negate) {
+                        return false;
+                    }
+                    final RexNode arg = ((RexCall) e).operands.get(0);
+                    return accept1(
+                            arg, e.getKind(), rexBuilder.makeNullLiteral(arg.getType()), newTerms);
                 default:
                     return false;
             }
@@ -2742,9 +2741,12 @@ public class RexSimplify {
                     final Sarg sarg = literal.getValueAs(Sarg.class);
                     b.addSarg(sarg, negate, literal.getType());
                     return true;
-                    // CHANGED: we remove IS_NULL here
-                    // because SEARCH operator in Calcite 1.26 handles UNKNOWNs incorrectly
-                    // see CALCITE-4446
+                case IS_NULL:
+                    if (negate) {
+                        throw new AssertionError("negate is not supported for IS_NULL");
+                    }
+                    b.containsNull = true;
+                    return true;
                 default:
                     throw new AssertionError("unexpected " + kind);
             }

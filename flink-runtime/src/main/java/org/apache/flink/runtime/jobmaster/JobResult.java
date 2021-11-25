@@ -220,12 +220,12 @@ public class JobResult implements Serializable {
         final JobStatus jobStatus = accessExecutionGraph.getState();
 
         checkArgument(
-                jobStatus.isTerminalState(),
+                jobStatus.isGloballyTerminalState(),
                 "The job "
                         + accessExecutionGraph.getJobName()
                         + '('
                         + jobId
-                        + ") is not in a "
+                        + ") is not in a globally "
                         + "terminal state. It is in state "
                         + jobStatus
                         + '.');

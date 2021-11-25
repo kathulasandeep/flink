@@ -43,21 +43,15 @@ import software.amazon.awssdk.services.kinesis.model.SubscribeToShardResponseHan
 
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.commons.lang3.RandomStringUtils.randomAlphabetic;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static software.amazon.awssdk.services.kinesis.model.ConsumerStatus.ACTIVE;
 import static software.amazon.awssdk.services.kinesis.model.ConsumerStatus.CREATING;
@@ -102,14 +96,6 @@ public class FakeKinesisFanOutBehavioursFactory {
         return new AlternatingSubscriptionErrorKinesisV2(LimitExceededException.builder().build());
     }
 
-    public static KinesisProxyV2Interface failsToAcquireSubscription() {
-        return new FailsToAcquireSubscriptionKinesis();
-    }
-
-    public static AbstractSingleShardFanOutKinesisV2 shardThatCreatesBackpressureOnQueue() {
-        return new MultipleEventsForSingleRequest();
-    }
-
     // ------------------------------------------------------------------------
     //  Behaviours related to describing streams
     // ------------------------------------------------------------------------
@@ -136,35 +122,22 @@ public class FakeKinesisFanOutBehavioursFactory {
         return new StreamConsumerFakeKinesis.Builder().withStreamConsumerStatus(CREATING).build();
     }
 
-    /** A dummy EFO implementation that fails to acquire subscription (no response). */
-    private static class FailsToAcquireSubscriptionKinesis extends KinesisProxyV2InterfaceAdapter {
-
-        @Override
-        public CompletableFuture<Void> subscribeToShard(
-                final SubscribeToShardRequest request,
-                final SubscribeToShardResponseHandler responseHandler) {
-
-            return CompletableFuture.supplyAsync(() -> null);
-        }
-    }
-
     public static AbstractSingleShardFanOutKinesisV2 emptyBatchFollowedBySingleRecord() {
         return new AbstractSingleShardFanOutKinesisV2(2) {
-            private int subscriptionCount = 0;
+            private int subscription = 0;
 
             @Override
-            List<SubscribeToShardEvent> getEventsToSend() {
+            void sendEvents(Subscriber<? super SubscribeToShardEventStream> subscriber) {
                 SubscribeToShardEvent.Builder builder =
                         SubscribeToShardEvent.builder()
-                                .continuationSequenceNumber(subscriptionCount == 0 ? "1" : null);
+                                .continuationSequenceNumber(subscription == 0 ? "1" : null);
 
-                if (subscriptionCount == 1) {
+                if (subscription == 1) {
                     builder.records(createRecord(new AtomicInteger(1)));
                 }
 
-                subscriptionCount++;
-
-                return Collections.singletonList(builder.build());
+                subscriber.onNext(builder.build());
+                subscription++;
             }
         };
     }
@@ -182,14 +155,15 @@ public class FakeKinesisFanOutBehavioursFactory {
         }
 
         @Override
-        void completeSubscription(Subscriber<? super SubscribeToShardEventStream> subscriber) {
-            if (index++ % 2 == 0) {
-                // Fail the subscription
-                super.completeSubscription(subscriber);
+        void sendEvents(Subscriber<? super SubscribeToShardEventStream> subscriber) {
+            if (index % 2 == 0) {
+                super.sendEvents(subscriber);
             } else {
-                // Do not fail the subscription
+                super.sendEventBatch(subscriber);
                 subscriber.onComplete();
             }
+
+            index++;
         }
     }
 
@@ -213,21 +187,20 @@ public class FakeKinesisFanOutBehavioursFactory {
         }
 
         @Override
-        List<SubscribeToShardEvent> getEventsToSend() {
-            return generateEvents(NUMBER_OF_EVENTS_PER_SUBSCRIPTION, sequenceNumber);
-        }
-
-        @Override
-        void completeSubscription(Subscriber<? super SubscribeToShardEventStream> subscriber) {
-            try {
-                // Add an artificial delay to allow records to flush
-                Thread.sleep(200);
-            } catch (InterruptedException e) {
-                throw new RuntimeException(e);
-            }
-
+        void sendEvents(Subscriber<? super SubscribeToShardEventStream> subscriber) {
+            sendEventBatch(subscriber);
             for (Throwable throwable : throwables) {
                 subscriber.onError(throwable);
+            }
+        }
+
+        void sendEventBatch(Subscriber<? super SubscribeToShardEventStream> subscriber) {
+            for (int i = 0; i < NUMBER_OF_EVENTS_PER_SUBSCRIPTION; i++) {
+                subscriber.onNext(
+                        SubscribeToShardEvent.builder()
+                                .records(createRecord(sequenceNumber))
+                                .continuationSequenceNumber(String.valueOf(i))
+                                .build());
             }
         }
     }
@@ -258,26 +231,8 @@ public class FakeKinesisFanOutBehavioursFactory {
         }
 
         @Override
-        List<SubscribeToShardEvent> getEventsToSend() {
-            return Collections.singletonList(event);
-        }
-    }
-
-    private static class MultipleEventsForSingleRequest extends AbstractSingleShardFanOutKinesisV2 {
-
-        private MultipleEventsForSingleRequest() {
-            super(1);
-        }
-
-        @Override
-        List<SubscribeToShardEvent> getEventsToSend() {
-            return generateEvents(2, new AtomicInteger(1));
-        }
-
-        @Override
-        void completeSubscription(Subscriber<? super SubscribeToShardEventStream> subscriber) {
-            generateEvents(3, new AtomicInteger(2)).forEach(subscriber::onNext);
-            super.completeSubscription(subscriber);
+        void sendEvents(Subscriber<? super SubscribeToShardEventStream> subscriber) {
+            subscriber.onNext(event);
         }
     }
 
@@ -310,9 +265,7 @@ public class FakeKinesisFanOutBehavioursFactory {
         }
 
         @Override
-        List<SubscribeToShardEvent> getEventsToSend() {
-            List<SubscribeToShardEvent> events = new ArrayList<>();
-
+        void sendEvents(final Subscriber<? super SubscribeToShardEventStream> subscriber) {
             SubscribeToShardEvent.Builder eventBuilder =
                     SubscribeToShardEvent.builder().millisBehindLatest(millisBehindLatest);
 
@@ -341,10 +294,8 @@ public class FakeKinesisFanOutBehavioursFactory {
                                 : null;
                 eventBuilder.continuationSequenceNumber(continuation);
 
-                events.add(eventBuilder.build());
+                subscriber.onNext(eventBuilder.build());
             }
-
-            return events;
         }
 
         /** A convenience builder for {@link SingleShardFanOutKinesisV2}. */
@@ -434,50 +385,31 @@ public class FakeKinesisFanOutBehavioursFactory {
                     () -> {
                         responseHandler.responseReceived(
                                 SubscribeToShardResponse.builder().build());
+
                         responseHandler.onEventStream(
                                 subscriber -> {
-                                    final List<SubscribeToShardEvent> eventsToSend;
+                                    subscriber.onSubscribe(mock(Subscription.class));
 
                                     if (remainingSubscriptions > 0) {
-                                        eventsToSend = getEventsToSend();
+                                        sendEvents(subscriber);
                                         remainingSubscriptions--;
                                     } else {
-                                        eventsToSend =
-                                                Collections.singletonList(
-                                                        SubscribeToShardEvent.builder()
-                                                                .millisBehindLatest(0L)
-                                                                .continuationSequenceNumber(null)
-                                                                .build());
+                                        SubscribeToShardEvent.Builder eventBuilder =
+                                                SubscribeToShardEvent.builder()
+                                                        .millisBehindLatest(0L)
+                                                        .continuationSequenceNumber(null);
+
+                                        subscriber.onNext(eventBuilder.build());
                                     }
 
-                                    Subscription subscription = mock(Subscription.class);
-                                    Iterator<SubscribeToShardEvent> iterator =
-                                            eventsToSend.iterator();
-
-                                    doAnswer(
-                                                    a -> {
-                                                        if (!iterator.hasNext()) {
-                                                            completeSubscription(subscriber);
-                                                        } else {
-                                                            subscriber.onNext(iterator.next());
-                                                        }
-
-                                                        return null;
-                                                    })
-                                            .when(subscription)
-                                            .request(anyLong());
-
-                                    subscriber.onSubscribe(subscription);
+                                    subscriber.onComplete();
                                 });
+
                         return null;
                     });
         }
 
-        void completeSubscription(Subscriber<? super SubscribeToShardEventStream> subscriber) {
-            subscriber.onComplete();
-        }
-
-        abstract List<SubscribeToShardEvent> getEventsToSend();
+        abstract void sendEvents(final Subscriber<? super SubscribeToShardEventStream> subscriber);
     }
 
     /** A fake Kinesis Proxy V2 that implements dummy logic for stream consumer related methods. */
@@ -673,17 +605,5 @@ public class FakeKinesisFanOutBehavioursFactory {
         }
 
         return createRecord(recordAggregator.clearAndGet().toRecordBytes(), sequenceNumber);
-    }
-
-    private static List<SubscribeToShardEvent> generateEvents(
-            int numberOfEvents, AtomicInteger sequenceNumber) {
-        return IntStream.range(0, numberOfEvents)
-                .mapToObj(
-                        i ->
-                                SubscribeToShardEvent.builder()
-                                        .records(createRecord(sequenceNumber))
-                                        .continuationSequenceNumber(String.valueOf(i))
-                                        .build())
-                .collect(Collectors.toList());
     }
 }

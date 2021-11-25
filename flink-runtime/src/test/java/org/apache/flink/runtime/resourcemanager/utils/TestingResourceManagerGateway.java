@@ -19,7 +19,6 @@
 package org.apache.flink.runtime.resourcemanager.utils;
 
 import org.apache.flink.api.common.JobID;
-import org.apache.flink.api.common.JobStatus;
 import org.apache.flink.api.common.time.Time;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.tuple.Tuple3;
@@ -87,7 +86,7 @@ public class TestingResourceManagerGateway implements ResourceManagerGateway {
                     JobMasterId, ResourceID, String, JobID, CompletableFuture<RegistrationResponse>>
             registerJobManagerFunction;
 
-    private volatile Consumer<Tuple3<JobID, JobStatus, Throwable>> disconnectJobManagerConsumer;
+    private volatile Consumer<Tuple2<JobID, Throwable>> disconnectJobManagerConsumer;
 
     private volatile Function<TaskExecutorRegistration, CompletableFuture<RegistrationResponse>>
             registerTaskExecutorFunction;
@@ -173,7 +172,7 @@ public class TestingResourceManagerGateway implements ResourceManagerGateway {
     }
 
     public void setDisconnectJobManagerConsumer(
-            Consumer<Tuple3<JobID, JobStatus, Throwable>> disconnectJobManagerConsumer) {
+            Consumer<Tuple2<JobID, Throwable>> disconnectJobManagerConsumer) {
         this.disconnectJobManagerConsumer = disconnectJobManagerConsumer;
     }
 
@@ -382,12 +381,11 @@ public class TestingResourceManagerGateway implements ResourceManagerGateway {
     }
 
     @Override
-    public void disconnectJobManager(JobID jobId, JobStatus jobStatus, Exception cause) {
-        final Consumer<Tuple3<JobID, JobStatus, Throwable>> currentConsumer =
-                disconnectJobManagerConsumer;
+    public void disconnectJobManager(JobID jobId, Exception cause) {
+        final Consumer<Tuple2<JobID, Throwable>> currentConsumer = disconnectJobManagerConsumer;
 
         if (currentConsumer != null) {
-            currentConsumer.accept(Tuple3.of(jobId, jobStatus, cause));
+            currentConsumer.accept(Tuple2.of(jobId, cause));
         }
     }
 

@@ -18,21 +18,22 @@
 
 package org.apache.flink.test.recovery;
 
+import org.apache.flink.api.common.JobExecutionResult;
 import org.apache.flink.api.common.functions.ReduceFunction;
 import org.apache.flink.api.common.functions.RichMapFunction;
 import org.apache.flink.api.common.restartstrategy.RestartStrategies;
 import org.apache.flink.api.java.ExecutionEnvironment;
+import org.apache.flink.api.java.io.LocalCollectionOutputFormat;
 import org.apache.flink.runtime.client.JobExecutionException;
-import org.apache.flink.runtime.testutils.MiniClusterResourceConfiguration;
-import org.apache.flink.test.util.MiniClusterWithClientResource;
-import org.apache.flink.util.TestLogger;
 
-import org.junit.ClassRule;
 import org.junit.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 /**
@@ -40,20 +41,14 @@ import static org.junit.Assert.fail;
  * should restart them to verify job completion.
  */
 @SuppressWarnings("serial")
-public abstract class SimpleRecoveryITCaseBase extends TestLogger {
-
-    @ClassRule
-    public static final MiniClusterWithClientResource MINI_CLUSTER_WITH_CLIENT_RESOURCE =
-            new MiniClusterWithClientResource(
-                    new MiniClusterResourceConfiguration.Builder()
-                            .setNumberTaskManagers(4)
-                            .setNumberSlotsPerTaskManager(1)
-                            .build());
+public abstract class SimpleRecoveryITCaseBase {
 
     @Test
     public void testFailedRunThenSuccessfulRun() throws Exception {
 
         try {
+            List<Long> resultCollection = new ArrayList<Long>();
+
             // attempt 1
             {
                 ExecutionEnvironment env = ExecutionEnvironment.getExecutionEnvironment();
@@ -61,13 +56,25 @@ public abstract class SimpleRecoveryITCaseBase extends TestLogger {
                 env.setParallelism(4);
                 env.setRestartStrategy(RestartStrategies.noRestart());
 
+                env.generateSequence(1, 10)
+                        .rebalance()
+                        .map(new FailingMapper1<Long>())
+                        .reduce(
+                                new ReduceFunction<Long>() {
+                                    @Override
+                                    public Long reduce(Long value1, Long value2) {
+                                        return value1 + value2;
+                                    }
+                                })
+                        .output(new LocalCollectionOutputFormat<Long>(resultCollection));
+
                 try {
-                    env.generateSequence(1, 10)
-                            .rebalance()
-                            .map(new FailingMapper1<>())
-                            .reduce(Long::sum)
-                            .collect();
-                    fail("The program should have failed, but run successfully");
+                    JobExecutionResult res = env.execute();
+                    String msg =
+                            res == null
+                                    ? "null result"
+                                    : "result in " + res.getNetRuntime() + " ms";
+                    fail("The program should have failed, but returned " + msg);
                 } catch (JobExecutionException e) {
                     // expected
                 }
@@ -80,12 +87,19 @@ public abstract class SimpleRecoveryITCaseBase extends TestLogger {
                 env.setParallelism(4);
                 env.setRestartStrategy(RestartStrategies.noRestart());
 
-                List<Long> resultCollection =
-                        env.generateSequence(1, 10)
-                                .rebalance()
-                                .map(new FailingMapper1<>())
-                                .reduce((ReduceFunction<Long>) Long::sum)
-                                .collect();
+                env.generateSequence(1, 10)
+                        .rebalance()
+                        .map(new FailingMapper1<Long>())
+                        .reduce(
+                                new ReduceFunction<Long>() {
+                                    @Override
+                                    public Long reduce(Long value1, Long value2) {
+                                        return value1 + value2;
+                                    }
+                                })
+                        .output(new LocalCollectionOutputFormat<Long>(resultCollection));
+
+                executeAndRunAssertions(env);
 
                 long sum = 0;
                 for (long l : resultCollection) {
@@ -102,19 +116,40 @@ public abstract class SimpleRecoveryITCaseBase extends TestLogger {
         }
     }
 
+    private void executeAndRunAssertions(ExecutionEnvironment env) throws Exception {
+        try {
+            JobExecutionResult result = env.execute();
+            assertTrue(result.getNetRuntime() >= 0);
+            assertNotNull(result.getAllAccumulatorResults());
+            assertTrue(result.getAllAccumulatorResults().isEmpty());
+        } catch (JobExecutionException e) {
+            fail("The program should have succeeded on the second run");
+        }
+    }
+
     @Test
     public void testRestart() {
         try {
+            List<Long> resultCollection = new ArrayList<Long>();
+
             ExecutionEnvironment env = ExecutionEnvironment.getExecutionEnvironment();
 
             env.setParallelism(4);
             // the default restart strategy should be taken
-            List<Long> resultCollection =
-                    env.generateSequence(1, 10)
-                            .rebalance()
-                            .map(new FailingMapper2<>())
-                            .reduce(Long::sum)
-                            .collect();
+
+            env.generateSequence(1, 10)
+                    .rebalance()
+                    .map(new FailingMapper2<Long>())
+                    .reduce(
+                            new ReduceFunction<Long>() {
+                                @Override
+                                public Long reduce(Long value1, Long value2) {
+                                    return value1 + value2;
+                                }
+                            })
+                    .output(new LocalCollectionOutputFormat<Long>(resultCollection));
+
+            executeAndRunAssertions(env);
 
             long sum = 0;
             for (long l : resultCollection) {
@@ -132,16 +167,26 @@ public abstract class SimpleRecoveryITCaseBase extends TestLogger {
     @Test
     public void testRestartMultipleTimes() {
         try {
+            List<Long> resultCollection = new ArrayList<Long>();
+
             ExecutionEnvironment env = ExecutionEnvironment.getExecutionEnvironment();
 
             env.setParallelism(4);
+            env.setRestartStrategy(RestartStrategies.fixedDelayRestart(5, 100));
 
-            List<Long> resultCollection =
-                    env.generateSequence(1, 10)
-                            .rebalance()
-                            .map(new FailingMapper3<>())
-                            .reduce(Long::sum)
-                            .collect();
+            env.generateSequence(1, 10)
+                    .rebalance()
+                    .map(new FailingMapper3<Long>())
+                    .reduce(
+                            new ReduceFunction<Long>() {
+                                @Override
+                                public Long reduce(Long value1, Long value2) {
+                                    return value1 + value2;
+                                }
+                            })
+                    .output(new LocalCollectionOutputFormat<Long>(resultCollection));
+
+            executeAndRunAssertions(env);
 
             long sum = 0;
             for (long l : resultCollection) {

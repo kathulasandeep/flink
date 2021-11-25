@@ -224,23 +224,6 @@ public class MemoryManagerSharedResourcesTest {
         assertTrue(resource.getResourceHandle().closed);
     }
 
-    @Test
-    public void testAllocateResourceInitializeFail() {
-        final MemoryManager memoryManager = createMemoryManager();
-
-        try {
-            memoryManager.getSharedMemoryResourceForManagedMemory(
-                    "type",
-                    (ignore) -> {
-                        throw new RuntimeException("initialization fail");
-                    },
-                    0.1);
-            fail("expect to fail");
-        } catch (Throwable t) {
-            // expected
-        }
-        assertTrue(memoryManager.verifyEmpty());
-    }
     // ------------------------------------------------------------------------
     //  Utils
     // ------------------------------------------------------------------------

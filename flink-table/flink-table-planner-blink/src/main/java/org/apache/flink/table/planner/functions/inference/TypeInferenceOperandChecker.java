@@ -27,6 +27,7 @@ import org.apache.flink.table.types.DataType;
 import org.apache.flink.table.types.inference.CallContext;
 import org.apache.flink.table.types.inference.TypeInference;
 import org.apache.flink.table.types.inference.TypeInferenceUtil;
+import org.apache.flink.table.types.inference.utils.AdaptedCallContext;
 import org.apache.flink.table.types.logical.LogicalType;
 
 import org.apache.calcite.rel.type.RelDataType;
@@ -117,7 +118,7 @@ public final class TypeInferenceOperandChecker implements SqlOperandTypeChecker 
     // --------------------------------------------------------------------------------------------
 
     private boolean checkOperandTypesOrError(SqlCallBinding callBinding, CallContext callContext) {
-        final CallContext adaptedCallContext;
+        final AdaptedCallContext adaptedCallContext;
         try {
             adaptedCallContext = adaptArguments(typeInference, callContext, null);
         } catch (ValidationException e) {

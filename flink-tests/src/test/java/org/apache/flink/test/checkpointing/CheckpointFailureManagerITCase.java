@@ -21,6 +21,7 @@ package org.apache.flink.test.checkpointing;
 import org.apache.flink.api.common.restartstrategy.RestartStrategies;
 import org.apache.flink.api.common.state.ListState;
 import org.apache.flink.api.common.state.ListStateDescriptor;
+import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.ReadableConfig;
 import org.apache.flink.core.fs.CloseableRegistry;
 import org.apache.flink.runtime.checkpoint.CheckpointFailureManager;
@@ -50,8 +51,9 @@ import org.apache.flink.util.ExceptionUtils;
 import org.apache.flink.util.FlinkRuntimeException;
 import org.apache.flink.util.TestLogger;
 
+import org.junit.AfterClass;
 import org.junit.Assert;
-import org.junit.ClassRule;
+import org.junit.Before;
 import org.junit.Test;
 
 import javax.annotation.Nonnull;
@@ -68,16 +70,32 @@ import static org.mockito.Mockito.mock;
 
 /** Tests to verify end-to-end logic of checkpoint failure manager. */
 public class CheckpointFailureManagerITCase extends TestLogger {
+    private static MiniClusterWithClientResource cluster;
 
-    @ClassRule
-    public static MiniClusterWithClientResource cluster =
-            new MiniClusterWithClientResource(
-                    new MiniClusterResourceConfiguration.Builder().build());
+    @Before
+    public void setup() throws Exception {
+        Configuration configuration = new Configuration();
 
-    @Test(timeout = 20_000)
+        cluster =
+                new MiniClusterWithClientResource(
+                        new MiniClusterResourceConfiguration.Builder()
+                                .setConfiguration(configuration)
+                                .build());
+        cluster.before();
+    }
+
+    @AfterClass
+    public static void shutDownExistingCluster() {
+        if (cluster != null) {
+            cluster.after();
+            cluster = null;
+        }
+    }
+
+    @Test(timeout = 10000)
     public void testAsyncCheckpointFailureTriggerJobFailed() throws Exception {
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        env.enableCheckpointing(500);
+        env.enableCheckpointing(100);
         env.setRestartStrategy(RestartStrategies.noRestart());
         env.setStateBackend(new AsyncFailureStateBackend());
         env.addSource(new StringGeneratingSourceFunction()).addSink(new DiscardingSink<>());

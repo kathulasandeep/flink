@@ -17,7 +17,6 @@
 
 package org.apache.flink.runtime.jobmaster;
 
-import org.apache.flink.api.common.JobID;
 import org.apache.flink.api.common.JobStatus;
 import org.apache.flink.api.common.time.Time;
 import org.apache.flink.runtime.checkpoint.StandaloneCheckpointRecoveryFactory;
@@ -27,7 +26,6 @@ import org.apache.flink.runtime.clusterframework.types.ResourceProfile;
 import org.apache.flink.runtime.executiongraph.ExecutionAttemptID;
 import org.apache.flink.runtime.heartbeat.HeartbeatServices;
 import org.apache.flink.runtime.highavailability.TestingHighAvailabilityServices;
-import org.apache.flink.runtime.jobgraph.JobGraph;
 import org.apache.flink.runtime.jobgraph.utils.JobGraphTestUtils;
 import org.apache.flink.runtime.jobmanager.OnCompletionActions;
 import org.apache.flink.runtime.jobmaster.utils.JobMasterBuilder;
@@ -101,9 +99,8 @@ public class JobMasterExecutionDeploymentReconciliationTest extends TestLogger {
 
         TestingExecutionDeploymentTrackerWrapper deploymentTrackerWrapper =
                 new TestingExecutionDeploymentTrackerWrapper();
-        final JobGraph jobGraph = JobGraphTestUtils.createSingleVertexJobGraph();
         JobMaster jobMaster =
-                createAndStartJobMaster(onCompletionActions, deploymentTrackerWrapper, jobGraph);
+                createAndStartJobMaster(onCompletionActions, deploymentTrackerWrapper);
         JobMasterGateway jobMasterGateway = jobMaster.getSelfGateway(JobMasterGateway.class);
         RPC_SERVICE_RESOURCE
                 .getTestingRpcService()
@@ -116,10 +113,7 @@ public class JobMasterExecutionDeploymentReconciliationTest extends TestLogger {
                 new LocalUnresolvedTaskManagerLocation();
 
         registerTaskExecutorAndOfferSlots(
-                jobMasterGateway,
-                jobGraph.getJobID(),
-                taskExecutorGateway,
-                localUnresolvedTaskManagerLocation);
+                jobMasterGateway, taskExecutorGateway, localUnresolvedTaskManagerLocation);
 
         ExecutionAttemptID deployedExecution =
                 deploymentTrackerWrapper.getTaskDeploymentFuture().get();
@@ -151,8 +145,7 @@ public class JobMasterExecutionDeploymentReconciliationTest extends TestLogger {
     public void testExecutionDeploymentReconciliationForPendingExecution() throws Exception {
         TestingExecutionDeploymentTrackerWrapper deploymentTrackerWrapper =
                 new TestingExecutionDeploymentTrackerWrapper();
-        final JobGraph jobGraph = JobGraphTestUtils.createSingleVertexJobGraph();
-        JobMaster jobMaster = createAndStartJobMaster(deploymentTrackerWrapper, jobGraph);
+        JobMaster jobMaster = createAndStartJobMaster(deploymentTrackerWrapper);
         JobMasterGateway jobMasterGateway = jobMaster.getSelfGateway(JobMasterGateway.class);
         RPC_SERVICE_RESOURCE
                 .getTestingRpcService()
@@ -173,10 +166,7 @@ public class JobMasterExecutionDeploymentReconciliationTest extends TestLogger {
                 new LocalUnresolvedTaskManagerLocation();
 
         registerTaskExecutorAndOfferSlots(
-                jobMasterGateway,
-                jobGraph.getJobID(),
-                taskExecutorGateway,
-                localUnresolvedTaskManagerLocation);
+                jobMasterGateway, taskExecutorGateway, localUnresolvedTaskManagerLocation);
 
         ExecutionAttemptID pendingExecutionId = taskSubmissionFuture.get();
 
@@ -194,23 +184,21 @@ public class JobMasterExecutionDeploymentReconciliationTest extends TestLogger {
         assertFalse(taskCancellationFuture.isDone());
     }
 
-    private JobMaster createAndStartJobMaster(
-            ExecutionDeploymentTracker executionDeploymentTracker, JobGraph jobGraph)
+    private JobMaster createAndStartJobMaster(ExecutionDeploymentTracker executionDeploymentTracker)
             throws Exception {
         return createAndStartJobMaster(
-                new JobMasterBuilder.TestingOnCompletionActions(),
-                executionDeploymentTracker,
-                jobGraph);
+                new JobMasterBuilder.TestingOnCompletionActions(), executionDeploymentTracker);
     }
 
     private JobMaster createAndStartJobMaster(
             OnCompletionActions onCompletionActions,
-            ExecutionDeploymentTracker executionDeploymentTracker,
-            JobGraph jobGraph)
+            ExecutionDeploymentTracker executionDeploymentTracker)
             throws Exception {
 
         JobMaster jobMaster =
-                new JobMasterBuilder(jobGraph, RPC_SERVICE_RESOURCE.getTestingRpcService())
+                new JobMasterBuilder(
+                                JobGraphTestUtils.createSingleVertexJobGraph(),
+                                RPC_SERVICE_RESOURCE.getTestingRpcService())
                         .withFatalErrorHandler(
                                 testingFatalErrorHandlerResource.getFatalErrorHandler())
                         .withHighAvailabilityServices(haServices)
@@ -260,16 +248,12 @@ public class JobMasterExecutionDeploymentReconciliationTest extends TestLogger {
 
     private void registerTaskExecutorAndOfferSlots(
             JobMasterGateway jobMasterGateway,
-            JobID jobId,
             TaskExecutorGateway taskExecutorGateway,
             UnresolvedTaskManagerLocation taskManagerLocation)
             throws ExecutionException, InterruptedException {
         jobMasterGateway
                 .registerTaskManager(
-                        taskExecutorGateway.getAddress(),
-                        taskManagerLocation,
-                        jobId,
-                        testingTimeout)
+                        taskExecutorGateway.getAddress(), taskManagerLocation, testingTimeout)
                 .get();
 
         Collection<SlotOffer> slotOffers =

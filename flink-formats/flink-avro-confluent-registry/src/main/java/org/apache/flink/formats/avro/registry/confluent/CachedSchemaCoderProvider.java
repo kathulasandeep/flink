@@ -25,11 +25,10 @@ import io.confluent.kafka.schemaregistry.client.CachedSchemaRegistryClient;
 
 import javax.annotation.Nullable;
 
-import java.util.Map;
 import java.util.Objects;
 
 /**
- * A {@link SchemaCoder.SchemaCoderProvider} that uses a cached schema registry client underneath.
+ * A {@link SchemaCoder.SchemaCoderProvider} that uses a cached schema registry client underlying. *
  */
 @Internal
 class CachedSchemaCoderProvider implements SchemaCoder.SchemaCoderProvider {
@@ -38,28 +37,21 @@ class CachedSchemaCoderProvider implements SchemaCoder.SchemaCoderProvider {
     private final String subject;
     private final String url;
     private final int identityMapCapacity;
-    private final @Nullable Map<String, ?> registryConfigs;
 
     CachedSchemaCoderProvider(String url, int identityMapCapacity) {
-        this(null, url, identityMapCapacity, null);
+        this(null, url, identityMapCapacity);
     }
 
-    CachedSchemaCoderProvider(
-            @Nullable String subject,
-            String url,
-            int identityMapCapacity,
-            @Nullable Map<String, ?> registryConfigs) {
+    CachedSchemaCoderProvider(@Nullable String subject, String url, int identityMapCapacity) {
         this.subject = subject;
         this.url = Objects.requireNonNull(url);
         this.identityMapCapacity = identityMapCapacity;
-        this.registryConfigs = registryConfigs;
     }
 
     @Override
     public SchemaCoder get() {
         return new ConfluentSchemaRegistryCoder(
-                this.subject,
-                new CachedSchemaRegistryClient(url, identityMapCapacity, registryConfigs));
+                this.subject, new CachedSchemaRegistryClient(url, identityMapCapacity));
     }
 
     @Override
@@ -73,12 +65,11 @@ class CachedSchemaCoderProvider implements SchemaCoder.SchemaCoderProvider {
         CachedSchemaCoderProvider that = (CachedSchemaCoderProvider) o;
         return identityMapCapacity == that.identityMapCapacity
                 && Objects.equals(subject, that.subject)
-                && url.equals(that.url)
-                && Objects.equals(registryConfigs, that.registryConfigs);
+                && url.equals(that.url);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(subject, url, identityMapCapacity, registryConfigs);
+        return Objects.hash(subject, url, identityMapCapacity);
     }
 }

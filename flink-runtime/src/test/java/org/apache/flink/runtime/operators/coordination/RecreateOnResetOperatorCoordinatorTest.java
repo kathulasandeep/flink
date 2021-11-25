@@ -32,52 +32,45 @@ import java.util.concurrent.CountDownLatch;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 /** Unit tests for {@link RecreateOnResetOperatorCoordinator}. */
 public class RecreateOnResetOperatorCoordinatorTest {
-
     private static final OperatorID OPERATOR_ID = new OperatorID(1234L, 5678L);
     private static final int NUM_SUBTASKS = 1;
 
     @Test
-    public void testQuiesceableContextForwardsProperties() {
+    public void testQuiesceableContextNotQuiesced() throws TaskNotRunningException {
         MockOperatorCoordinatorContext context =
                 new MockOperatorCoordinatorContext(OPERATOR_ID, NUM_SUBTASKS);
         RecreateOnResetOperatorCoordinator.QuiesceableContext quiesceableContext =
                 new RecreateOnResetOperatorCoordinator.QuiesceableContext(context);
+
+        TestingEvent event = new TestingEvent();
+        quiesceableContext.sendEvent(event, 0);
+        quiesceableContext.failJob(new Exception());
 
         assertEquals(OPERATOR_ID, quiesceableContext.getOperatorId());
         assertEquals(NUM_SUBTASKS, quiesceableContext.currentParallelism());
-    }
-
-    @Test
-    public void testQuiesceableContextNotQuiesced() {
-        MockOperatorCoordinatorContext context =
-                new MockOperatorCoordinatorContext(OPERATOR_ID, NUM_SUBTASKS);
-        RecreateOnResetOperatorCoordinator.QuiesceableContext quiesceableContext =
-                new RecreateOnResetOperatorCoordinator.QuiesceableContext(context);
-
-        final Exception exception = new Exception();
-        quiesceableContext.failJob(exception);
-
+        assertEquals(Collections.singletonList(event), context.getEventsToOperatorBySubtaskId(0));
         assertTrue(context.isJobFailed());
-        assertSame(exception, context.getJobFailureReason());
     }
 
     @Test
-    public void testQuiescedContext() {
+    public void testQuiescedContext() throws TaskNotRunningException {
         MockOperatorCoordinatorContext context =
                 new MockOperatorCoordinatorContext(OPERATOR_ID, NUM_SUBTASKS);
         RecreateOnResetOperatorCoordinator.QuiesceableContext quiesceableContext =
                 new RecreateOnResetOperatorCoordinator.QuiesceableContext(context);
 
         quiesceableContext.quiesce();
+        quiesceableContext.sendEvent(new TestingEvent(), 0);
         quiesceableContext.failJob(new Exception());
 
+        assertEquals(OPERATOR_ID, quiesceableContext.getOperatorId());
+        assertEquals(NUM_SUBTASKS, quiesceableContext.currentParallelism());
+        assertTrue(context.getEventsToOperator().isEmpty());
         assertFalse(context.isJobFailed());
     }
 
@@ -106,7 +99,6 @@ public class RecreateOnResetOperatorCoordinatorTest {
                 getInternalCoordinator(coordinator);
         assertEquals(
                 stateToRestore, internalCoordinatorAfterReset.getLastRestoredCheckpointState());
-        assertNotSame(internalCoordinatorAfterReset, internalCoordinatorBeforeReset);
     }
 
     @Test
@@ -132,7 +124,8 @@ public class RecreateOnResetOperatorCoordinatorTest {
         final CountDownLatch blockOnCloseLatch = new CountDownLatch(1);
         // Let the user coordinator block on close.
         TestingCoordinatorProvider provider = new TestingCoordinatorProvider(blockOnCloseLatch);
-        MockOperatorCoordinatorContext context = new MockOperatorCoordinatorContext(OPERATOR_ID, 2);
+        MockOperatorCoordinatorContext context =
+                new MockOperatorCoordinatorContext(OPERATOR_ID, NUM_SUBTASKS);
         RecreateOnResetOperatorCoordinator coordinator =
                 (RecreateOnResetOperatorCoordinator) provider.create(context, closingTimeoutMs);
 
@@ -252,6 +245,8 @@ public class RecreateOnResetOperatorCoordinatorTest {
                 "Timed out when waiting for the coordinator to close.");
     }
 
+    public void testFailureInCreateCoordinator() {}
+
     // ---------------
 
     private RecreateOnResetOperatorCoordinator createCoordinator(
@@ -267,10 +262,9 @@ public class RecreateOnResetOperatorCoordinatorTest {
 
     // ---------------
 
-    @SuppressWarnings("serial")
     private static class TestingCoordinatorProvider
             extends RecreateOnResetOperatorCoordinator.Provider {
-
+        private static final long serialVersionUID = 4184184580789587013L;
         private final CountDownLatch blockOnCloseLatch;
         private final List<TestingOperatorCoordinator> createdCoordinators;
 

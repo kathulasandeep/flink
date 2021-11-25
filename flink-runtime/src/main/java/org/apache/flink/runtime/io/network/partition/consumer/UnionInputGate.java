@@ -367,7 +367,13 @@ public class UnionInputGate extends InputGate {
             }
         }
 
-        return Optional.of(inputGatesWithData.poll());
+        IndexedInputGate inputGate = inputGatesWithData.poll();
+
+        if (inputGatesWithData.isEmpty()) {
+            availabilityHelper.resetUnavailable();
+        }
+
+        return Optional.of(inputGate);
     }
 
     @Override

@@ -59,10 +59,6 @@ class HiveParallelismInference {
      * SELECT * FROM xxx LIMIT [limit]</code>.
      */
     int limit(Long limit) {
-        if (!infer) {
-            return parallelism;
-        }
-
         if (limit != null) {
             parallelism = Math.min(parallelism, (int) (limit / 1000));
         }

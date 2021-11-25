@@ -174,7 +174,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
 
     // --------- ResourceManager --------
 
-    @Nullable private LeaderRetrievalService resourceManagerLeaderRetriever;
+    private final LeaderRetrievalService resourceManagerLeaderRetriever;
 
     // --------- TaskManagers --------
 
@@ -300,6 +300,9 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
         final JobID jid = jobGraph.getJobID();
 
         log.info("Initializing job {} ({}).", jobName, jid);
+
+        resourceManagerLeaderRetriever =
+                highAvailabilityServices.getResourceManagerLeaderRetriever();
 
         this.slotPool = checkNotNull(slotPoolFactory).createSlotPool(jid);
 
@@ -439,26 +442,17 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
     @Override
     public CompletableFuture<Acknowledge> updateTaskExecutionState(
             final TaskExecutionState taskExecutionState) {
-        FlinkException taskExecutionException;
-        try {
-            checkNotNull(taskExecutionState, "taskExecutionState");
+        checkNotNull(taskExecutionState, "taskExecutionState");
 
-            if (schedulerNG.updateTaskExecutionState(taskExecutionState)) {
-                return CompletableFuture.completedFuture(Acknowledge.get());
-            } else {
-                taskExecutionException =
-                        new ExecutionGraphException(
-                                "The execution attempt "
-                                        + taskExecutionState.getID()
-                                        + " was not found.");
-            }
-        } catch (Exception e) {
-            taskExecutionException =
-                    new JobMasterException(
-                            "Could not update the state of task execution for JobMaster.", e);
-            handleJobMasterError(taskExecutionException);
+        if (schedulerNG.updateTaskExecutionState(taskExecutionState)) {
+            return CompletableFuture.completedFuture(Acknowledge.get());
+        } else {
+            return FutureUtils.completedExceptionally(
+                    new ExecutionGraphException(
+                            "The execution attempt "
+                                    + taskExecutionState.getID()
+                                    + " was not found."));
         }
-        return FutureUtils.completedExceptionally(taskExecutionException);
     }
 
     @Override
@@ -668,19 +662,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
     public CompletableFuture<RegistrationResponse> registerTaskManager(
             final String taskManagerRpcAddress,
             final UnresolvedTaskManagerLocation unresolvedTaskManagerLocation,
-            final JobID jobId,
             final Time timeout) {
-
-        if (!jobGraph.getJobID().equals(jobId)) {
-            log.debug(
-                    "Rejecting TaskManager registration attempt because of wrong job id {}.",
-                    jobId);
-            return CompletableFuture.completedFuture(
-                    new JMTMRegistrationRejection(
-                            String.format(
-                                    "The JobManager is not responsible for job %s. Maybe the TaskManager used outdated connection information.",
-                                    jobId)));
-        }
 
         final TaskManagerLocation taskManagerLocation;
         try {
@@ -700,8 +682,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
                             unresolvedTaskManagerLocation.getExternalAddress(),
                             throwable.getMessage());
             log.error(errMsg);
-            return CompletableFuture.completedFuture(
-                    new RegistrationResponse.Failure(new FlinkException(errMsg, throwable)));
+            return CompletableFuture.completedFuture(new RegistrationResponse.Decline(errMsg));
         }
 
         final ResourceID taskManagerId = taskManagerLocation.getResourceID();
@@ -715,7 +696,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
                     .handleAsync(
                             (TaskExecutorGateway taskExecutorGateway, Throwable throwable) -> {
                                 if (throwable != null) {
-                                    return new RegistrationResponse.Failure(throwable);
+                                    return new RegistrationResponse.Decline(throwable.getMessage());
                                 }
 
                                 slotPool.registerTaskManager(taskManagerId);
@@ -907,11 +888,6 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
         //   - activate leader retrieval for the resource manager
         //   - on notification of the leader, the connection will be established and
         //     the slot pool will start requesting slots
-        if (resourceManagerLeaderRetriever != null) {
-            resourceManagerLeaderRetriever.stop();
-        }
-        resourceManagerLeaderRetriever =
-                highAvailabilityServices.getResourceManagerLeaderRetriever();
         resourceManagerLeaderRetriever.start(new ResourceManagerLeaderListener());
     }
 
@@ -958,10 +934,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
         setFencingToken(null);
 
         try {
-            if (resourceManagerLeaderRetriever != null) {
-                resourceManagerLeaderRetriever.stop();
-                resourceManagerLeaderRetriever = null;
-            }
+            resourceManagerLeaderRetriever.stop();
             resourceManagerAddress = null;
         } catch (Throwable t) {
             log.warn("Failed to stop resource manager leader retriever when suspending.", t);
@@ -1252,8 +1225,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
 
         ResourceManagerGateway resourceManagerGateway =
                 establishedResourceManagerConnection.getResourceManagerGateway();
-        resourceManagerGateway.disconnectJobManager(
-                jobGraph.getJobID(), schedulerNG.requestJobStatus(), cause);
+        resourceManagerGateway.disconnectJobManager(jobGraph.getJobID(), cause);
         slotPool.disconnectResourceManager();
     }
 
@@ -1292,10 +1264,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
 
     private class ResourceManagerConnection
             extends RegisteredRpcConnection<
-                    ResourceManagerId,
-                    ResourceManagerGateway,
-                    JobMasterRegistrationSuccess,
-                    RegistrationResponse.Rejection> {
+                    ResourceManagerId, ResourceManagerGateway, JobMasterRegistrationSuccess> {
         private final JobID jobID;
 
         private final ResourceID jobManagerResourceID;
@@ -1322,16 +1291,10 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
 
         @Override
         protected RetryingRegistration<
-                        ResourceManagerId,
-                        ResourceManagerGateway,
-                        JobMasterRegistrationSuccess,
-                        RegistrationResponse.Rejection>
+                        ResourceManagerId, ResourceManagerGateway, JobMasterRegistrationSuccess>
                 generateRegistration() {
             return new RetryingRegistration<
-                    ResourceManagerId,
-                    ResourceManagerGateway,
-                    JobMasterRegistrationSuccess,
-                    RegistrationResponse.Rejection>(
+                    ResourceManagerId, ResourceManagerGateway, JobMasterRegistrationSuccess>(
                     log,
                     getRpcService(),
                     "ResourceManager",
@@ -1367,13 +1330,6 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
                             establishResourceManagerConnection(success);
                         }
                     });
-        }
-
-        @Override
-        protected void onRegistrationRejection(RegistrationResponse.Rejection rejection) {
-            handleJobMasterError(
-                    new IllegalStateException(
-                            "The ResourceManager should never reject a JobMaster registration."));
         }
 
         @Override

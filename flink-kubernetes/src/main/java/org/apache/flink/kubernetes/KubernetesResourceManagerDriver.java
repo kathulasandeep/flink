@@ -25,6 +25,7 @@ import org.apache.flink.configuration.TaskManagerOptions;
 import org.apache.flink.kubernetes.configuration.KubernetesConfigOptions;
 import org.apache.flink.kubernetes.configuration.KubernetesResourceManagerDriverConfiguration;
 import org.apache.flink.kubernetes.kubeclient.FlinkKubeClient;
+import org.apache.flink.kubernetes.kubeclient.KubeClientFactory;
 import org.apache.flink.kubernetes.kubeclient.factory.KubernetesTaskManagerFactory;
 import org.apache.flink.kubernetes.kubeclient.parameters.KubernetesTaskManagerParameters;
 import org.apache.flink.kubernetes.kubeclient.resources.KubernetesPod;
@@ -65,7 +66,9 @@ public class KubernetesResourceManagerDriver
 
     private final Time podCreationRetryInterval;
 
-    private final FlinkKubeClient flinkKubeClient;
+    private final KubeClientFactory kubeClientFactory;
+
+    private Optional<FlinkKubeClient> kubeClientOpt;
 
     /** Request resource futures, keyed by pod names. */
     private final Map<String, CompletableFuture<KubernetesWorkerNode>> requestResourceFutures;
@@ -89,13 +92,13 @@ public class KubernetesResourceManagerDriver
 
     public KubernetesResourceManagerDriver(
             Configuration flinkConfig,
-            FlinkKubeClient flinkKubeClient,
+            KubeClientFactory kubeClientFactory,
             KubernetesResourceManagerDriverConfiguration configuration) {
         super(flinkConfig, GlobalConfiguration.loadConfiguration());
         this.clusterId = Preconditions.checkNotNull(configuration.getClusterId());
         this.podCreationRetryInterval =
                 Preconditions.checkNotNull(configuration.getPodCreationRetryInterval());
-        this.flinkKubeClient = Preconditions.checkNotNull(flinkKubeClient);
+        this.kubeClientFactory = Preconditions.checkNotNull(kubeClientFactory);
         this.requestResourceFutures = new HashMap<>();
         this.podCreationCoolDown = FutureUtils.completedVoidFuture();
         this.running = false;
@@ -107,6 +110,8 @@ public class KubernetesResourceManagerDriver
 
     @Override
     protected void initializeInternal() throws Exception {
+        kubeClientOpt =
+                Optional.of(kubeClientFactory.fromConfiguration(flinkConfig, getIoExecutor()));
         podsWatchOpt = watchTaskManagerPods();
         recoverWorkerNodesFromPreviousAttempts();
         this.running = true;
@@ -129,7 +134,9 @@ public class KubernetesResourceManagerDriver
         }
 
         try {
-            flinkKubeClient.close();
+            if (kubeClientOpt.isPresent()) {
+                kubeClientOpt.get().close();
+            }
         } catch (Exception e) {
             exception = ExceptionUtils.firstOrSuppressed(e, exception);
         }
@@ -146,7 +153,7 @@ public class KubernetesResourceManagerDriver
                 "Deregistering Flink Kubernetes cluster, clusterId: {}, diagnostics: {}",
                 clusterId,
                 optionalDiagnostics == null ? "" : optionalDiagnostics);
-        flinkKubeClient.stopAndCleanupCluster(clusterId);
+        getKubeClient().stopAndCleanupCluster(clusterId);
     }
 
     @Override
@@ -176,7 +183,7 @@ public class KubernetesResourceManagerDriver
         // main thread busy.
         final CompletableFuture<Void> createPodFuture =
                 podCreationCoolDown.thenCompose(
-                        (ignore) -> flinkKubeClient.createTaskManagerPod(taskManagerPod));
+                        (ignore) -> getKubeClient().createTaskManagerPod(taskManagerPod));
 
         FutureUtils.assertNoException(
                 createPodFuture.handleAsync(
@@ -217,7 +224,7 @@ public class KubernetesResourceManagerDriver
 
     private void recoverWorkerNodesFromPreviousAttempts() throws ResourceManagerException {
         List<KubernetesPod> podList =
-                flinkKubeClient.getPodsWithLabels(KubernetesUtils.getTaskManagerLabels(clusterId));
+                getKubeClient().getPodsWithLabels(KubernetesUtils.getTaskManagerLabels(clusterId));
         final List<KubernetesWorkerNode> recoveredWorkers = new ArrayList<>();
 
         for (KubernetesPod pod : podList) {
@@ -317,7 +324,7 @@ public class KubernetesResourceManagerDriver
     }
 
     private void stopPod(String podName) {
-        flinkKubeClient
+        getKubeClient()
                 .stopPod(podName)
                 .whenComplete(
                         (ignore, throwable) -> {
@@ -330,11 +337,19 @@ public class KubernetesResourceManagerDriver
                         });
     }
 
+    private FlinkKubeClient getKubeClient() {
+        Preconditions.checkState(
+                kubeClientOpt.isPresent(),
+                "Cannot get the kube client. Resource manager driver is not initialized.");
+        return kubeClientOpt.get();
+    }
+
     private Optional<KubernetesWatch> watchTaskManagerPods() {
         return Optional.of(
-                flinkKubeClient.watchPodsAndDoCallback(
-                        KubernetesUtils.getTaskManagerLabels(clusterId),
-                        new PodCallbackHandlerImpl()));
+                getKubeClient()
+                        .watchPodsAndDoCallback(
+                                KubernetesUtils.getTaskManagerLabels(clusterId),
+                                new PodCallbackHandlerImpl()));
     }
 
     // ------------------------------------------------------------------------
